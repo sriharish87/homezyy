@@ -97,7 +97,7 @@ function Section({ title, rows }: { title: string; rows: SettingRow[] }) {
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const { user, logout } = useAuth();
+  const { user, logout, updateUser } = useAuth();
 
   const [notificationsOn, setNotificationsOn] = useState(true);
   const [locationOn,      setLocationOn]      = useState(true);
@@ -109,10 +109,16 @@ export default function ProfileScreen() {
     try {
       // Optimistic update
       setIsAvailable(value);
+      if (updateUser) {
+        await updateUser({ isAvailable: value });
+      }
       await api.patch('/tech/availability', { isAvailable: value });
     } catch (error) {
       // Revert on failure
       setIsAvailable(!value);
+      if (updateUser) {
+        await updateUser({ isAvailable: !value });
+      }
       Alert.alert('Error', 'Failed to update availability. Please try again.');
     }
   };

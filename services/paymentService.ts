@@ -113,13 +113,13 @@ export async function fetchUpcomingUnpaidBookings(): Promise<UnpaidBooking[]> {
 
 /**
  * Fetch the technician's profile (including wallet balance).
- * GET /technician/profile
+ * GET /tech/profile
  */
 export async function fetchTechnicianProfile(): Promise<TechnicianProfile> {
-  const response = await api.get('/technician/profile');
+  const response = await api.get('/tech/profile');
   const data = response?.data?.data || response?.data || {};
   return {
-    walletBalance: data.walletBalance ?? 0,
+    walletBalance: (data.walletBalance ?? 0) / 100,
     name: data.name,
     email: data.email,
     phone: data.phone,

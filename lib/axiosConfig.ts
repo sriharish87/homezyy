@@ -50,7 +50,7 @@ api.interceptors.response.use(
       try {
         const parsedUser = storedUser ? JSON.parse(storedUser) : null;
 
-        const refreshResponse = await refreshClient.post('/api/auth/refresh', {
+        const refreshResponse = await refreshClient.post('/auth/refresh', {
           refreshToken: storedRefreshToken,
           role: parsedUser?.role,
         });

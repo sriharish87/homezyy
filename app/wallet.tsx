@@ -9,7 +9,7 @@ import {
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, Radius, Shadow } from '@/constants/Theme';
@@ -47,9 +47,11 @@ export default function WalletScreen() {
     }
   }, []);
 
-  useEffect(() => {
-    loadWallet();
-  }, [loadWallet]);
+  useFocusEffect(
+    useCallback(() => {
+      loadWallet();
+    }, [loadWallet])
+  );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -188,18 +190,7 @@ export default function WalletScreen() {
           </View>
         </View>
 
-        {/* ── Transaction History (placeholder) ───────────── */}
-        <View style={styles.historySection}>
-          <Text style={styles.sectionTitle}>Transaction History</Text>
 
-          <View style={styles.historyEmpty}>
-            <MaterialIcons name="receipt-long" size={48} color={Colors.border} />
-            <Text style={styles.historyEmptyTitle}>No transactions yet</Text>
-            <Text style={styles.historyEmptyDesc}>
-              Your withdrawal history will appear here once you start earning.
-            </Text>
-          </View>
-        </View>
 
         {/* ── Help section ────────────────────────────────── */}
         <TouchableOpacity style={styles.helpCard} activeOpacity={0.88}>

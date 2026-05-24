@@ -64,7 +64,7 @@ function formatBookingTime(isoDate: string) {
 const STATUS_META: Record<BookingStatus, { label: string; color: string; bg: string; icon: string }> = {
   pending:   { label: 'Pending',   color: '#d97706', bg: '#fef3c7', icon: 'schedule' },
   accepted:  { label: 'Accepted',  color: '#2563eb', bg: '#dbeafe', icon: 'thumb-up' },
-  completed: { label: 'Completed', color: '#059669', bg: '#d1fae5', icon: 'check-circle' },
+  completed: { label: 'Paid',      color: '#059669', bg: '#d1fae5', icon: 'check-circle' },
   rejected:  { label: 'Cancelled', color: '#dc2626', bg: '#fee2e2', icon: 'cancel' },
   expired:   { label: 'Expired',   color: '#dc2626', bg: '#fee2e2', icon: 'cancel' },
 };
@@ -416,12 +416,11 @@ export default function BookingsScreen() {
     const filtered = bookings.filter((b) => {
       const bTime = new Date(b.bookingTime);
       const isFuture = bTime > now;
-      const isFinishedStatus = ['completed', 'rejected', 'expired'].includes(b.status);
 
       if (activeTab === 'upcoming') {
-        return isFuture && !isFinishedStatus;
+        return isFuture;
       } else {
-        return !isFuture || isFinishedStatus;
+        return !isFuture;
       }
     });
 
