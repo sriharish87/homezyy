@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
   Animated, Dimensions,
@@ -13,7 +13,9 @@ const { height } = Dimensions.get('window');
 
 export default function Welcome() {
   const router = useRouter();
-  const { isAuthenticated, loading } = useAuth();
+  const { isAuthenticated, loading, user } = useAuth();
+  const redirectInProgress = useRef(false);
+  const [selectedRole, setSelectedRole] = useState<'customer' | 'technician'>('customer');
 
   // Entrance animation
   const fadeAnim   = useRef(new Animated.Value(0)).current;
@@ -28,10 +30,17 @@ export default function Welcome() {
 
   // Redirect if already authenticated
   useEffect(() => {
-    if (!loading && isAuthenticated) {
-      router.replace('/(tabs)/home');
+    if (!loading && isAuthenticated && !redirectInProgress.current) {
+      redirectInProgress.current = true;
+      router.replace(
+        user?.isProfileComplete ? '/(tabs)/home' : ('/complete-profile' as any)
+      );
     }
-  }, [isAuthenticated, loading]);
+  }, [isAuthenticated, loading, user]);
+
+  const handleContinue = () => {
+    router.push(`/login?role=${selectedRole}` as any);
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -70,26 +79,69 @@ export default function Welcome() {
           {/* Divider */}
           <View style={styles.divider} />
 
-          {/* CTA Buttons */}
-          <View style={styles.actions}>
-            <TouchableOpacity
-              style={styles.primaryBtn}
-              onPress={() => router.push('/login')}
-              activeOpacity={0.85}
-            >
-              <MaterialIcons name="home" size={20} color="#fff" style={{ marginRight: 8 }} />
-              <Text style={styles.primaryBtnText}>I'm a Household</Text>
-            </TouchableOpacity>
+          {/* Role Selection */}
+          <View style={styles.roleSection}>
+            <Text style={styles.roleLabel}>I am a...</Text>
+            <View style={styles.roleRow}>
+              <TouchableOpacity
+                style={[
+                  styles.roleBtn,
+                  selectedRole === 'customer' && styles.roleBtnActive,
+                ]}
+                onPress={() => setSelectedRole('customer')}
+                activeOpacity={0.85}
+              >
+                <MaterialIcons
+                  name="home"
+                  size={20}
+                  color={selectedRole === 'customer' ? '#fff' : Colors.primary}
+                  style={{ marginRight: 6 }}
+                />
+                <Text
+                  style={[
+                    styles.roleBtnText,
+                    selectedRole === 'customer' && styles.roleBtnTextActive,
+                  ]}
+                >
+                  Household
+                </Text>
+              </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.secondaryBtn}
-              onPress={() => router.push('/login')}
-              activeOpacity={0.85}
-            >
-              <MaterialIcons name="build" size={20} color={Colors.primary} style={{ marginRight: 8 }} />
-              <Text style={styles.secondaryBtnText}>I'm a Service Provider</Text>
-            </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.roleBtn,
+                  selectedRole === 'technician' && styles.roleBtnActive,
+                ]}
+                onPress={() => setSelectedRole('technician')}
+                activeOpacity={0.85}
+              >
+                <MaterialIcons
+                  name="build"
+                  size={20}
+                  color={selectedRole === 'technician' ? '#fff' : Colors.primary}
+                  style={{ marginRight: 6 }}
+                />
+                <Text
+                  style={[
+                    styles.roleBtnText,
+                    selectedRole === 'technician' && styles.roleBtnTextActive,
+                  ]}
+                >
+                  Service Provider
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
+
+          {/* CTA Button */}
+          <TouchableOpacity
+            style={styles.primaryBtn}
+            onPress={handleContinue}
+            activeOpacity={0.85}
+          >
+            <MaterialIcons name="login" size={20} color="#fff" style={{ marginRight: 8 }} />
+            <Text style={styles.primaryBtnText}>Continue with Google</Text>
+          </TouchableOpacity>
 
           {/* Skip link */}
           <TouchableOpacity onPress={() => router.replace('/(tabs)/home')} style={styles.skipRow}>
@@ -183,9 +235,46 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.border,
     marginVertical: Spacing.base,
   },
-  actions: {
+  roleSection: {
     width: '100%',
+    marginBottom: Spacing.base,
+  },
+  roleLabel: {
+    fontSize: Typography.sm,
+    fontFamily: 'Manrope-Bold',
+    color: Colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: Spacing.sm,
+    textAlign: 'center',
+  },
+  roleRow: {
+    flexDirection: 'row',
     gap: 12,
+  },
+  roleBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 52,
+    borderRadius: Radius.md,
+    borderWidth: 2,
+    borderColor: Colors.primary,
+    backgroundColor: Colors.surface,
+  },
+  roleBtnActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+    ...Shadow.md,
+  },
+  roleBtnText: {
+    fontFamily: 'Manrope-Bold',
+    fontSize: Typography.base,
+    color: Colors.primary,
+  },
+  roleBtnTextActive: {
+    color: '#fff',
   },
   primaryBtn: {
     flexDirection: 'row',
@@ -194,25 +283,12 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary,
     borderRadius: Radius.md,
     height: 56,
+    width: '100%',
     ...Shadow.md,
+    marginBottom: Spacing.base,
   },
   primaryBtnText: {
     color: '#fff',
-    fontFamily: 'Manrope-Bold',
-    fontSize: Typography.md,
-  },
-  secondaryBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.surface,
-    borderRadius: Radius.md,
-    height: 56,
-    borderWidth: 2,
-    borderColor: Colors.primary,
-  },
-  secondaryBtnText: {
-    color: Colors.primary,
     fontFamily: 'Manrope-Bold',
     fontSize: Typography.md,
   },
@@ -220,7 +296,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    marginTop: Spacing.base,
   },
   skipText: {
     fontSize: Typography.sm,

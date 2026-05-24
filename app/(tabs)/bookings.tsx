@@ -1,12 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  Image, FlatList,
+  Image, FlatList, ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, Radius, Shadow } from '@/constants/Theme';
+import { useAuth } from '@/context/AuthContext';
+import { usePaymentFlow } from '@/hooks/usePaymentFlow';
+import { fetchUpcomingUnpaidBookings, UnpaidBooking } from '@/services/paymentService';
+import PaymentResultModal from '@/components/ui/PaymentResultModal';
 
 // ── Types ──────────────────────────────────────────────────
 
@@ -24,23 +28,14 @@ interface Booking {
   status: BookingStatus;
   serviceImage: string;
   rating?: number;
+  /** If the booking is unpaid and accepted — eligible for payment */
+  bookingId?: string;
+  isPaid?: boolean;
 }
 
-// ── Mock data ──────────────────────────────────────────────
+// ── Mock data (completed & cancelled) ──────────────────────
 
-const MOCK_BOOKINGS: Booking[] = [
-  {
-    id: 'b1',
-    serviceName: 'Fan repair/install',
-    providerName: 'VoltMaster Pro',
-    category: 'Electrical',
-    date: 'Monday, 28th April 2026',
-    time: '10:00 AM – 11:30 AM',
-    location: '12, Jubilee Hills, Hyderabad',
-    price: '₹249',
-    status: 'upcoming',
-    serviceImage: 'https://images.unsplash.com/photo-1585771724684-38269d6639fd?w=200&q=80',
-  },
+const MOCK_STATIC_BOOKINGS: Booking[] = [
   {
     id: 'b2',
     serviceName: 'Kitchen deep cleaning',
@@ -53,6 +48,7 @@ const MOCK_BOOKINGS: Booking[] = [
     status: 'completed',
     serviceImage: 'https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?w=200&q=80',
     rating: 5,
+    isPaid: true,
   },
   {
     id: 'b3',
@@ -65,6 +61,7 @@ const MOCK_BOOKINGS: Booking[] = [
     price: '₹499',
     status: 'cancelled',
     serviceImage: 'https://images.unsplash.com/photo-1621905251189-08b45d6a269e?w=200&q=80',
+    isPaid: false,
   },
 ];
 
@@ -98,7 +95,17 @@ const chip = StyleSheet.create({
 
 // ── Booking card ───────────────────────────────────────────
 
-function BookingCard({ booking, onPress }: { booking: Booking; onPress: () => void }) {
+function BookingCard({
+  booking,
+  onPress,
+  onPayNow,
+  paymentLoading,
+}: {
+  booking: Booking;
+  onPress: () => void;
+  onPayNow?: () => void;
+  paymentLoading?: boolean;
+}) {
   return (
     <TouchableOpacity style={bc.card} onPress={onPress} activeOpacity={0.88}>
       {/* Service image */}
@@ -134,11 +141,41 @@ function BookingCard({ booking, onPress }: { booking: Booking; onPress: () => vo
               <Text style={bc.rateBtnText}>Rate Service</Text>
             </TouchableOpacity>
           )}
-          {booking.status === 'upcoming' && (
+
+          {booking.status === 'upcoming' && !booking.isPaid && onPayNow && (
+            <TouchableOpacity
+              style={[bc.payNowBtn, paymentLoading && bc.payNowBtnDisabled]}
+              onPress={(e) => {
+                e.stopPropagation?.();
+                onPayNow();
+              }}
+              disabled={paymentLoading}
+              activeOpacity={0.8}
+            >
+              {paymentLoading ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <>
+                  <MaterialIcons name="payment" size={14} color="#fff" />
+                  <Text style={bc.payNowBtnText}>Pay Now</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
+
+          {booking.status === 'upcoming' && booking.isPaid && (
+            <View style={bc.paidBadge}>
+              <MaterialIcons name="check-circle" size={14} color={Colors.success} />
+              <Text style={bc.paidBadgeText}>Paid</Text>
+            </View>
+          )}
+
+          {booking.status === 'upcoming' && !booking.isPaid && !onPayNow && (
             <TouchableOpacity style={bc.cancelBtn}>
               <Text style={bc.cancelBtnText}>Cancel</Text>
             </TouchableOpacity>
           )}
+
           {booking.status === 'cancelled' && (
             <TouchableOpacity style={bc.rebookBtn}>
               <Text style={bc.rebookBtnText}>Rebook</Text>
@@ -223,6 +260,39 @@ const bc = StyleSheet.create({
     fontFamily: 'Manrope-Bold',
     color: '#d97706',
   },
+  payNowBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: Colors.success,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: Radius.full,
+    minWidth: 100,
+    justifyContent: 'center',
+  },
+  payNowBtnDisabled: {
+    opacity: 0.7,
+  },
+  payNowBtnText: {
+    fontSize: Typography.sm,
+    fontFamily: 'Manrope-Bold',
+    color: '#fff',
+  },
+  paidBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#d1fae5',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: Radius.full,
+  },
+  paidBadgeText: {
+    fontSize: Typography.sm,
+    fontFamily: 'Manrope-Bold',
+    color: Colors.success,
+  },
   cancelBtn: {
     borderWidth: 1,
     borderColor: Colors.error,
@@ -254,9 +324,80 @@ type FilterTab = 'all' | 'upcoming' | 'completed' | 'cancelled';
 
 export default function BookingsScreen() {
   const router = useRouter();
+  const { user } = useAuth();
   const [activeFilter, setActiveFilter] = useState<FilterTab>('all');
+  const [unpaidBookings, setUnpaidBookings] = useState<Booking[]>([]);
+  const [loadingUnpaid, setLoadingUnpaid] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [payingBookingId, setPayingBookingId] = useState<string | null>(null);
 
-  const filtered = MOCK_BOOKINGS.filter(
+  // ── Payment hook ─────────────────────────────────────────
+  const {
+    initiatePayment,
+    loading: paymentLoading,
+    razorpayError,
+    paymentResult,
+    dismissResult,
+  } = usePaymentFlow({
+    onSuccess: () => {
+      setPayingBookingId(null);
+      loadUnpaidBookings(); // Refresh the list
+    },
+    onError: () => {
+      // Don't clear payingBookingId — user can retry
+    },
+    onClose: () => {
+      setPayingBookingId(null);
+    },
+  });
+
+  // ── Fetch unpaid bookings from API ───────────────────────
+  const loadUnpaidBookings = useCallback(async () => {
+    try {
+      setLoadingUnpaid(true);
+      const data = await fetchUpcomingUnpaidBookings();
+
+      const mapped: Booking[] = data.map((b: UnpaidBooking) => ({
+        id: b.bookingId,
+        bookingId: b.bookingId,
+        serviceName: b.serviceName || 'Service',
+        providerName: b.providerName || 'Homezy Professional',
+        category: b.category || 'General',
+        date: b.date || 'Scheduled',
+        time: b.time || '',
+        location: b.location || '',
+        price: `₹${b.price?.toLocaleString('en-IN') ?? '0'}`,
+        status: 'upcoming' as BookingStatus,
+        serviceImage:
+          b.serviceImage ||
+          'https://images.unsplash.com/photo-1585771724684-38269d6639fd?w=200&q=80',
+        isPaid: false,
+      }));
+
+      setUnpaidBookings(mapped);
+    } catch (err) {
+      console.error('[BookingsScreen] Failed to load unpaid bookings:', err);
+    } finally {
+      setLoadingUnpaid(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (user?.role === 'customer') {
+      loadUnpaidBookings();
+    }
+  }, [user?.role, loadUnpaidBookings]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadUnpaidBookings();
+    setRefreshing(false);
+  }, [loadUnpaidBookings]);
+
+  // ── Merge unpaid + static bookings ───────────────────────
+  const allBookings = [...unpaidBookings, ...MOCK_STATIC_BOOKINGS];
+
+  const filtered = allBookings.filter(
     (b) => activeFilter === 'all' || b.status === activeFilter
   );
 
@@ -266,6 +407,11 @@ export default function BookingsScreen() {
     { id: 'completed', label: 'Completed' },
     { id: 'cancelled', label: 'Cancelled' },
   ];
+
+  const handlePayNow = (bookingId: string) => {
+    setPayingBookingId(bookingId);
+    initiatePayment(bookingId);
+  };
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -300,7 +446,12 @@ export default function BookingsScreen() {
 
       {/* Main List Area */}
       <View style={styles.mainContent}>
-        {filtered.length === 0 ? (
+        {loadingUnpaid && unpaidBookings.length === 0 ? (
+          <View style={styles.emptyState}>
+            <ActivityIndicator size="large" color={Colors.primary} />
+            <Text style={styles.emptyDesc}>Loading bookings...</Text>
+          </View>
+        ) : filtered.length === 0 ? (
           <View style={styles.emptyState}>
             <MaterialIcons name="calendar-month" size={64} color={Colors.border} />
             <Text style={styles.emptyTitle}>No bookings yet</Text>
@@ -320,13 +471,43 @@ export default function BookingsScreen() {
               <BookingCard
                 booking={item}
                 onPress={() => router.push('/bookings/booking-confirmation')}
+                onPayNow={
+                  item.status === 'upcoming' && !item.isPaid && item.bookingId
+                    ? () => handlePayNow(item.bookingId!)
+                    : undefined
+                }
+                paymentLoading={paymentLoading && payingBookingId === item.bookingId}
               />
             )}
             contentContainerStyle={styles.list}
             showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor={Colors.primary}
+                colors={[Colors.primary]}
+              />
+            }
           />
         )}
+
+        {/* ── Razorpay error toast ── */}
+        {razorpayError && !paymentLoading && (
+          <View style={styles.toastBar}>
+            <MaterialIcons name="warning" size={16} color="#f59e0b" />
+            <Text style={styles.toastText} numberOfLines={2}>
+              {razorpayError}
+            </Text>
+          </View>
+        )}
       </View>
+
+      {/* ── Payment result modal (5 scenarios) ── */}
+      <PaymentResultModal
+        result={paymentResult}
+        onDismiss={dismissResult}
+      />
     </SafeAreaView>
   );
 }
@@ -427,5 +608,32 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontFamily: 'Manrope-Bold',
     fontSize: 14,
+  },
+  toastBar: {
+    position: 'absolute',
+    bottom: 90,
+    left: 20,
+    right: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#fffbeb',
+    borderWidth: 1,
+    borderColor: '#fde68a',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+  },
+  toastText: {
+    flex: 1,
+    fontSize: 13,
+    fontFamily: 'Manrope-SemiBold',
+    color: '#92400e',
+    lineHeight: 18,
   },
 });

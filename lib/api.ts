@@ -78,29 +78,10 @@ export interface User {
 }
 
 // ── Auth ───────────────────────────────────────────────────
-
-/**
- * Send OTP to a phone number.
- * TODO: POST /auth/send-otp
- */
-export async function sendOtp(phone: string): Promise<void> {
-  // await apiFetch('/auth/send-otp', { method: 'POST', body: JSON.stringify({ phone }) });
-  console.log('[API STUB] sendOtp:', phone);
-  await delay(600);
-}
-
-/**
- * Verify OTP and receive a JWT.
- * TODO: POST /auth/verify-otp
- */
-export async function verifyOtp(phone: string, otp: string): Promise<{ user: User; token: string }> {
-  // return apiFetch('/auth/verify-otp', { method: 'POST', body: JSON.stringify({ phone, otp }) });
-  await delay(600);
-  return {
-    user: { id: phone, name: 'Homezy User', email: '' },
-    token: 'stub-jwt-token',
-  };
-}
+// Auth is handled via Google Sign-In through:
+//   - services/authService.ts (loginWithGoogleToken, completeUserProfile)
+//   - context/AuthContext.tsx (login, setSession, logout)
+// No phone/OTP flow is used.
 
 // ── Categories ─────────────────────────────────────────────
 

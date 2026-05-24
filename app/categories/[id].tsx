@@ -266,10 +266,10 @@ export default function SubServicesScreen() {
 
     setTimeout(() => {
       router.push({
-        pathname: '/services/[id]',
+        pathname: '/technicians/[service]/[subservice]',
         params: {
-          id: service.title,
-          data: JSON.stringify({ ...service, category }),
+          service: category,
+          subservice: service.title,
         },
       });
       setTimeout(() => setIsNavigating(false), 1000);

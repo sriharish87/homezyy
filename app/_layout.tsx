@@ -14,7 +14,9 @@ import {
   Manrope_800ExtraBold,
 } from '@expo-google-fonts/manrope';
 import { AuthProvider } from '@/context/AuthContext';
+import { SocketProvider } from '@/context/SocketContext';
 import WebSidebar from '@/components/layout/WebSidebar';
+import SocketOverlay from '@/components/booking/SocketOverlay';
 
 // Keep splash visible while fonts load
 SplashScreen.preventAutoHideAsync();
@@ -39,19 +41,22 @@ export default function RootLayout() {
   if (!fontsLoaded) return null;
 
   const isDesktop = width >= 1024;
-  const noSidebar = pathname === '/login' || pathname === '/welcome' || pathname === '/';
+  const noSidebar = pathname === '/login' || pathname === '/welcome' || pathname === '/' || pathname === '/complete-profile';
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <AuthProvider>
-          <StatusBar style="auto" />
-          <View style={isDesktop && !noSidebar ? styles.desktopWrapper : styles.mobileWrapper}>
-            {isDesktop && !noSidebar && <WebSidebar />}
-            <View style={styles.contentWrapper}>
-              <Stack screenOptions={{ headerShown: false }} />
+          <SocketProvider>
+            <StatusBar style="auto" />
+            <View style={isDesktop && !noSidebar ? styles.desktopWrapper : styles.mobileWrapper}>
+              {isDesktop && !noSidebar && <WebSidebar />}
+              <View style={styles.contentWrapper}>
+                <Stack screenOptions={{ headerShown: false }} />
+                <SocketOverlay />
+              </View>
             </View>
-          </View>
+          </SocketProvider>
         </AuthProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

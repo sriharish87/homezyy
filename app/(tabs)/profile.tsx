@@ -121,10 +121,23 @@ export default function ProfileScreen() {
 
   const accountRows: SettingRow[] = [
     { icon: 'person-outline',   label: 'Edit Profile',          type: 'chevron', onPress: () => {} },
+    // Wallet — only visible for technicians
+    ...(user?.role === 'technician'
+      ? [
+          {
+            icon: 'account-balance-wallet',
+            label: 'Wallet',
+            type: 'chevron' as const,
+            sublabel: 'View earnings & withdraw',
+            onPress: () => router.push('/wallet'),
+          },
+        ]
+      : []),
     { icon: 'location-on',      label: 'Saved Addresses',       type: 'chevron', onPress: () => {} },
     { icon: 'payment',          label: 'Payment Methods',       type: 'chevron', onPress: () => {} },
     { icon: 'local-offer',      label: 'Coupons & Offers',      type: 'chevron', onPress: () => {} },
   ];
+
 
   const preferenceRows: SettingRow[] = [
     {

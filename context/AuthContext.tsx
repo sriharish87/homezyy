@@ -1,12 +1,13 @@
-import React, {
-  createContext, useContext, useEffect, useState, ReactNode,
-} from 'react';
+import React, { createContext, useContext, useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { loginWithGoogleToken } from '@/services/authService';
+import api from '@/lib/axiosConfig';
 
 // ── Storage keys ───────────────────────────────────────────
 const STORAGE_KEYS = {
   TOKEN: '@homezy_token',
-  USER:  '@homezy_user',
+  REFRESH_TOKEN: '@homezy_refresh_token',
+  USER: '@homezy_user',
 } as const;
 
 // ── Types ──────────────────────────────────────────────────
@@ -15,110 +16,214 @@ export interface User {
   name: string;
   email: string;
   phone?: string;
-  avatar?: string;
+  address?: string;
+  address_text?: string;
+  location?: {
+    type: 'Point';
+    coordinates: [number, number];
+  };
+  services?: string[];
+  subservices?: string[];
+  experienceYears?: number;
+  pricePerHour?: number;
+  rating?: number;
+  profilePic?: string;
+  role?: 'customer' | 'technician';
+  isProfileComplete: boolean;
 }
 
+type AuthRole = 'customer' | 'technician';
+
 interface AuthContextType {
-  /** null = not logged in, undefined = still loading from storage */
-  user: User | null | undefined;
-  /** Raw JWT token string, null if not authenticated */
-  token: string | null;
-  /** True if user is logged in */
   isAuthenticated: boolean;
-  /** True during initial AsyncStorage rehydration */
+  user: User | null;
+  token: string | null;
   loading: boolean;
-  /** True during login / logout API calls */
   authLoading: boolean;
-  /** Last auth error message, or null */
   error: string | null;
-  login:    (user: User, token: string) => Promise<void>;
-  logout:   () => Promise<void>;
+  login: (googleToken: string, role: AuthRole) => Promise<User | null>;
+  setSession: (user: User, token: string, refreshToken?: string) => Promise<User>;
+  logout: () => Promise<void>;
+  updateUser: (data: Partial<User>) => Promise<void>;
   setError: (error: string | null) => void;
 }
 
 // ── Context ────────────────────────────────────────────────
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user,        setUser]        = useState<User | null | undefined>(undefined);
-  const [token,       setToken]       = useState<string | null>(null);
-  const [loading,     setLoading]     = useState(true);
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [user, setUser] = useState<User | null>(null);
+  const [token, setToken] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const [authLoading, setAuthLoading] = useState(false);
-  const [error,       setError]       = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const isAuthenticated = !!token;
+  const isAuthenticated = !!token && !!user;
 
-  // ── Rehydrate session on mount ─────────────────────────
+  // 🔄 Restore session
   useEffect(() => {
-    (async () => {
+    const loadAuth = async () => {
       try {
-        const [storedToken, storedUser] = await Promise.all([
-          AsyncStorage.getItem(STORAGE_KEYS.TOKEN),
-          AsyncStorage.getItem(STORAGE_KEYS.USER),
-        ]);
+        const storedToken = await AsyncStorage.getItem(STORAGE_KEYS.TOKEN);
+        const storedUser = await AsyncStorage.getItem(STORAGE_KEYS.USER);
 
         if (storedToken && storedUser) {
-          try {
-            const parsed = JSON.parse(storedUser) as User;
+          const parsedUser = JSON.parse(storedUser);
 
-            // ── Backend Integration Point ─────────────────
-            // Optional: validate token with server before trusting it:
-            // await api.get('/auth/validate', { headers: { Authorization: `Bearer ${storedToken}` } });
+          try {
+            // Validate persisted session with backend on app start.
+            const role =
+              parsedUser?.role === 'technician' ? 'technician' : 'customer';
+            const validationResponse = await api.get('/auth/validate', {
+              params: { role },
+            });
+
+            const validatedUser =
+              validationResponse?.data?.data?.user ||
+              validationResponse?.data?.user ||
+              parsedUser;
+
+            const normalizedUser = {
+              ...parsedUser,
+              ...validatedUser,
+              isProfileComplete: Boolean(
+                validatedUser?.isProfileComplete ?? parsedUser?.isProfileComplete
+              ),
+            };
 
             setToken(storedToken);
-            setUser(parsed);
-          } catch {
-            // Corrupted storage — clear it
-            await AsyncStorage.multiRemove([STORAGE_KEYS.TOKEN, STORAGE_KEYS.USER]);
+            setUser(normalizedUser);
+
+            await AsyncStorage.setItem(
+              STORAGE_KEYS.USER,
+              JSON.stringify(normalizedUser)
+            );
+          } catch (validationError) {
+            console.warn('Session validation failed:', validationError);
+
+            await AsyncStorage.multiRemove([
+              STORAGE_KEYS.TOKEN,
+              STORAGE_KEYS.REFRESH_TOKEN,
+              STORAGE_KEYS.USER,
+            ]);
+
+            setToken(null);
             setUser(null);
-            setError('Session corrupted, please sign in again.');
           }
-        } else {
-          setUser(null);
         }
-      } catch (e) {
-        console.error('Auth rehydration error:', e);
-        setUser(null);
-        setError('Failed to restore session.');
+      } catch (err) {
+        console.error('Restore session error:', err);
+        setError('Failed to restore session');
       } finally {
         setLoading(false);
       }
-    })();
+    };
+
+    loadAuth();
   }, []);
 
-  // ── Login ──────────────────────────────────────────────
-  const login = async (userData: User, authToken: string) => {
-    setAuthLoading(true);
+  // 🔐 SET SESSION
+  const setSession = async (
+    userData: User,
+    authToken: string,
+    refreshToken?: string
+  ) => {
     try {
-      await AsyncStorage.multiSet([
+      setAuthLoading(true);
+      const normalizedUser = {
+        ...userData,
+        isProfileComplete: Boolean(userData.isProfileComplete),
+      };
+
+      const entries: [string, string][] = [
         [STORAGE_KEYS.TOKEN, authToken],
-        [STORAGE_KEYS.USER,  JSON.stringify(userData)],
-      ]);
+        [STORAGE_KEYS.USER, JSON.stringify(normalizedUser)],
+      ];
+
+      if (refreshToken) {
+        entries.push([STORAGE_KEYS.REFRESH_TOKEN, refreshToken]);
+      }
+
+      await AsyncStorage.multiSet(entries);
+
+      setUser(normalizedUser);
       setToken(authToken);
-      setUser(userData);
       setError(null);
-    } catch (e) {
-      console.error('Login persistence error:', e);
-      setError('Login failed. Please try again.');
+
+      return normalizedUser;
+    } catch (err) {
+      console.error('Login error:', err);
+      setError('Failed to save login session');
+      throw err;
     } finally {
       setAuthLoading(false);
     }
   };
 
-  // ── Logout ─────────────────────────────────────────────
-  const logout = async () => {
-    setAuthLoading(true);
+  // 🔐 LOGIN (Google)
+  const login = async (googleToken: string, role: AuthRole) => {
     try {
-      // ── Backend Integration Point ──────────────────────
-      // Invalidate token server-side (optional):
-      // await api.post('/auth/logout', {}, { headers: { Authorization: `Bearer ${token}` } });
-
-      await AsyncStorage.multiRemove([STORAGE_KEYS.TOKEN, STORAGE_KEYS.USER]);
-      setToken(null);
-      setUser(null);
+      setAuthLoading(true);
       setError(null);
-    } catch (e) {
-      console.error('Logout error:', e);
+
+      const response = await loginWithGoogleToken(googleToken, role);
+      return await setSession(
+        response.user,
+        response.accessToken,
+        response.refreshToken
+      );
+    } catch (err) {
+      console.error('Google login error:', err);
+      setError('Failed to login with Google');
+      return null;
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  // 🔓 LOGOUT
+  const logout = async () => {
+    try {
+      setAuthLoading(true);
+
+      await AsyncStorage.multiRemove([
+        STORAGE_KEYS.TOKEN,
+        STORAGE_KEYS.REFRESH_TOKEN,
+        STORAGE_KEYS.USER,
+      ]);
+
+      setUser(null);
+      setToken(null);
+      setError(null);
+    } catch (err) {
+      console.error('Logout error:', err);
+
+      // fallback: still clear state
+      setUser(null);
+      setToken(null);
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  // 🔥 UPDATE USER PROFILE
+  const updateUser = async (data: Partial<User>) => {
+    if (!user) return;
+
+    try {
+      setAuthLoading(true);
+
+      const updatedUser = { ...user, ...data };
+
+      setUser(updatedUser);
+
+      await AsyncStorage.setItem(
+        STORAGE_KEYS.USER,
+        JSON.stringify(updatedUser)
+      );
+    } catch (err) {
+      console.error('Update user error:', err);
+      setError('Failed to update profile');
     } finally {
       setAuthLoading(false);
     }
@@ -127,14 +232,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return (
     <AuthContext.Provider
       value={{
+        isAuthenticated,
         user,
         token,
-        isAuthenticated,
         loading,
         authLoading,
         error,
         login,
+        setSession,
         logout,
+        updateUser,
         setError,
       }}
     >
@@ -143,8 +250,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 }
 
-export function useAuth(): AuthContextType {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error('useAuth must be used inside <AuthProvider>');
-  return ctx;
+export function useAuth() {
+  const context = useContext(AuthContext);
+  if (!context) throw new Error('useAuth must be used inside <AuthProvider>');
+  return context;
 }

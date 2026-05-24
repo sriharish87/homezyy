@@ -1,0 +1,256 @@
+# Dual-Strike Notification System: Expo Push + Existing WebSocket
+
+Add Expo Push Notifications as an offline safety net alongside the existing Socket.IO real-time system. When the app is open, push banners are silently muted (WebSocket handles everything). When the app is closed/backgrounded, push notifications drop a banner that deep-links the user to the correct screen.
+
+## User Review Required
+
+> [!IMPORTANT]
+> **Push Notifications CANNOT be tested on Expo Web.** Expo Push Notifications rely on native APNs (iOS) and FCM (Android) services. The `expo-notifications` module returns `null` for push tokens on web and all notification APIs are no-ops. You **must** use a physical Android/iOS device via Expo Go or a development build. An Android emulator with Google Play Services will also work for FCM.
+
+> [!WARNING]
+> **Package installation**: I will run the install commands for both frontend (`expo install`) and backend (`npm install`) directly. Both codebases will gain new dependencies.
+
+> [!IMPORTANT]
+> **Your existing WebSocket code is NEVER touched.** The push system is built entirely alongside it — new files, new fields, additive-only edits to existing backend controllers.
+
+## Open Questions
+
+> [!IMPORTANT]
+> **`projectId`**: Expo Push requires an `expo.extra.eas.projectId` in `app.json`. You need to run `eas init` on your frontend project to get one (requires an Expo account). Without this, `getExpoPushTokenAsync()` will fail on device. **Do you already have an EAS project ID, or should I leave a placeholder?**
+
+---
+
+## Proposed Changes
+
+### Phase 1: Package Installation
+
+#### Frontend (`homezyy`)
+```bash
+npx expo install expo-notifications expo-device expo-constants
+```
+These are the official Expo modules. `expo-notifications` handles tokens + listeners, `expo-device` detects physical devices (tokens only work on physical devices), `expo-constants` reads `projectId`.
+
+#### Backend (`FIXI-BACKEND`)
+```bash
+npm install expo-server-sdk
+```
+The official Expo server SDK for sending push notifications from Node.js.
+
+---
+
+### Phase 2: Database Schema Updates
+
+#### [MODIFY] [users.js](file:///c:/Users/Sriharish/Desktop/FIXI-BACKEND/FIXI-BACKEND/model/users.js)
+Add `pushToken` field to the User schema:
+```diff
+ address_text: { type: String, trim: true },
++
++  // Expo Push Notification Token (registered from mobile app)
++  pushToken: { type: String, default: null },
+
+   // Matches provided example field name
+   created_at: { type: Date, default: Date.now },
+```
+
+#### [MODIFY] [technicians.js](file:///c:/Users/Sriharish/Desktop/FIXI-BACKEND/FIXI-BACKEND/model/technicians.js)
+Add `pushToken` field to the Technician schema:
+```diff
+ rating: { type: Number, min: 0, max: 5, default: 0 },
++
++  // Expo Push Notification Token (registered from mobile app)
++  pushToken: { type: String, default: null },
++
+ }, {
+   timestamps: true,
+ });
+```
+
+---
+
+### Phase 3: Push Token Registration (Backend API)
+
+#### [NEW] [pushToken.js](file:///c:/Users/Sriharish/Desktop/FIXI-BACKEND/FIXI-BACKEND/routes/pushToken.js)
+A new route file with a single `POST /push-token/register` endpoint. It accepts `{ pushToken }` in the body and saves it to the correct collection (User or Technician) based on `req.user.role` from the JWT.
+
+#### [MODIFY] [server.js](file:///c:/Users/Sriharish/Desktop/FIXI-BACKEND/FIXI-BACKEND/server.js)
+Mount the new push token route:
+```diff
++const pushTokenRoutes = require('./routes/pushToken');
+ ...
++app.use('/push-token', pushTokenRoutes);
+```
+
+---
+
+### Phase 4: Backend Push Utility
+
+#### [NEW] [sendPushNotification.js](file:///c:/Users/Sriharish/Desktop/FIXI-BACKEND/FIXI-BACKEND/utils/sendPushNotification.js)
+A reusable utility function using `expo-server-sdk`:
+```js
+sendPushNotification(pushToken, { title, body, data })
+```
+- Validates the token format with `Expo.isExpoPushToken()`
+- Sends a single push message via the Expo Push API
+- Logs success/failure using the existing logger
+- The `data` field carries the hidden routing payload (e.g., `{ screen: '/wallet', bookingId: '...' }`)
+
+---
+
+### Phase 5: Integrate Push into the 3 Triggers (Backend)
+
+#### [MODIFY] [bookingcontroller.js](file:///c:/Users/Sriharish/Desktop/FIXI-BACKEND/FIXI-BACKEND/controllers/bookingcontroller.js)
+**Trigger 1: Customer creates booking → Notify Technician**
+
+After the existing `io.to(technicianId).emit('new_booking_request', ...)` block (~line 131), add:
+```js
+// DUAL-STRIKE: Send push notification to technician
+const tech = await Technician.findById(technicianId);
+if (tech?.pushToken) {
+  const { sendPushNotification } = require('../utils/sendPushNotification');
+  sendPushNotification(tech.pushToken, {
+    title: '🔧 New Booking Request!',
+    body: `${customer?.name || 'A customer'} needs ${serviceType}`,
+    data: { screen: '/(tabs)/home', bookingId: String(newBooking._id) },
+  });
+}
+```
+- **Push route target**: `/(tabs)/home` — the technician lands on Home, where the existing WebSocket `SocketOverlay` popup will show the accept/decline modal.
+- The `bookingId` is passed in data so the frontend can cross-reference.
+
+#### [MODIFY] [server.js](file:///c:/Users/Sriharish/Desktop/FIXI-BACKEND/FIXI-BACKEND/server.js)
+**Trigger 2: Technician accepts/declines → Notify Customer**
+
+After the existing `io.to(customerId).emit('booking_update', ...)` block (~line 133), add:
+```js
+// DUAL-STRIKE: Send push notification to customer
+const User = require('./model/users');
+const customer = await User.findById(customerId);
+if (customer?.pushToken) {
+  const { sendPushNotification } = require('./utils/sendPushNotification');
+  sendPushNotification(customer.pushToken, {
+    title: status === 'accepted' ? '✅ Booking Accepted!' : '❌ Booking Declined',
+    body: status === 'accepted'
+      ? 'Your technician is on the way!'
+      : 'Your technician declined. Try another.',
+    data: { screen: '/(tabs)/bookings', bookingId: bookingId },
+  });
+}
+```
+
+#### [MODIFY] [paymentController.js](file:///c:/Users/Sriharish/Desktop/FIXI-BACKEND/FIXI-BACKEND/controllers/paymentController.js)
+**Trigger 3: Payment verified → Notify Technician**
+
+After the existing `io.to(technicianId).emit('payment_received', ...)` block (~line 161), add:
+```js
+// DUAL-STRIKE: Send push notification to technician
+const techForPush = await Technician.findById(tx.technicianId);
+if (techForPush?.pushToken) {
+  const { sendPushNotification } = require('../utils/sendPushNotification');
+  sendPushNotification(techForPush.pushToken, {
+    title: '💰 Payment Received!',
+    body: `₹${(technicianCut / 100).toFixed(0)} credited to your wallet`,
+    data: { screen: '/wallet', bookingId: String(tx.bookingId) },
+  });
+}
+```
+
+---
+
+### Phase 6: Frontend — Push Token Hook
+
+#### [NEW] [usePushNotifications.ts](file:///c:/Users/Sriharish/Desktop/FIXI-FRONTEND/homezyy/homezyy/hooks/usePushNotifications.ts)
+A reusable hook that:
+1. Checks if running on a physical device (`expo-device`)
+2. Requests notification permissions
+3. Calls `getExpoPushTokenAsync()` to get the Expo Push Token
+4. Sends it to `POST /push-token/register` via the existing axios instance
+5. Returns the token and any error state
+6. Is a no-op on web (gracefully skips)
+
+This hook is called once globally — it does NOT interfere with the existing `SocketContext`.
+
+---
+
+### Phase 7: Frontend — Traffic Cop + Deep-Link Router
+
+#### [MODIFY] [_layout.tsx](file:///c:/Users/Sriharish/Desktop/FIXI-FRONTEND/homezyy/homezyy/app/_layout.tsx)
+Add the following **alongside** the existing providers (AuthProvider, SocketProvider):
+
+1. **Import and call `usePushNotifications()`** to register the token on app load.
+
+2. **Set `Notifications.setNotificationHandler()`** — the Traffic Cop:
+   ```js
+   Notifications.setNotificationHandler({
+     handleNotification: async () => ({
+       shouldShowAlert: false,   // SUPPRESS banner when foreground
+       shouldPlaySound: false,
+       shouldSetBadge: false,
+     }),
+   });
+   ```
+   This runs at module level (outside the component). When the app is in the foreground, WebSocket handles everything — push banners are silently eaten.
+
+3. **`addNotificationResponseReceivedListener`** — Deep-link router:
+   When a user taps a background/killed notification, this listener fires and reads `notification.request.content.data.screen` to call `router.push(screen)`.
+
+#### Structure of the modified `_layout.tsx`:
+```
+// Module level: setNotificationHandler (Traffic Cop)
+// Inside RootLayout:
+//   - usePushNotifications() → registers token
+//   - useEffect with addNotificationResponseReceivedListener → handles tap routing
+//   - Everything else (AuthProvider, SocketProvider, Stack, SocketOverlay) stays UNTOUCHED
+```
+
+#### [MODIFY] [app.json](file:///c:/Users/Sriharish/Desktop/FIXI-FRONTEND/homezyy/homezyy/app.json)
+Add the `expo-notifications` plugin for Android channel configuration:
+```diff
+ "plugins": [
+   "expo-router",
+   "expo-font",
++  [
++    "expo-notifications",
++    {
++      "icon": "./assets/icon.png",
++      "color": "#3e2a56"
++    }
++  ],
+   [
+     "expo-splash-screen",
+```
+
+---
+
+## File Change Summary
+
+| File | Action | Purpose |
+|------|--------|---------|
+| `model/users.js` | MODIFY | Add `pushToken` field |
+| `model/technicians.js` | MODIFY | Add `pushToken` field |
+| `routes/pushToken.js` | NEW | `POST /push-token/register` endpoint |
+| `utils/sendPushNotification.js` | NEW | Reusable Expo push sender utility |
+| `server.js` | MODIFY | Mount push route + add push to Trigger 2 |
+| `controllers/bookingcontroller.js` | MODIFY | Add push to Trigger 1 |
+| `controllers/paymentController.js` | MODIFY | Add push to Trigger 3 |
+| `hooks/usePushNotifications.ts` | NEW | Token registration hook |
+| `app/_layout.tsx` | MODIFY | Traffic Cop + deep-link tap handler |
+| `app.json` | MODIFY | Add notifications plugin |
+
+## Verification Plan
+
+### Automated Tests
+- Run `node -e "require('./utils/sendPushNotification')"` in backend to verify the utility loads without errors.
+- Start backend with `npm start` and confirm no crashes.
+- Start frontend with `npx expo start` and confirm no build errors.
+
+### Manual Verification (Physical Device Required)
+- Install Expo Go on a physical Android device.
+- Run `npx expo start` and scan the QR code.
+- Login as a technician → verify the push token is registered (check MongoDB `technicians` collection for `pushToken` field).
+- From a second device/Postman, create a booking invite → verify the technician receives a push notification when the app is backgrounded.
+- Tap the notification → verify it routes to the Home screen.
+- Test Trigger 2 and 3 similarly.
+
+### Web Testing Limitation
+> [!CAUTION]
+> **You CANNOT test push notifications on Expo Web.** The `expo-notifications` module is a native-only API. On web, `getExpoPushTokenAsync()` returns null and all notification handlers are no-ops. The hook is written to gracefully skip on web, so your web dev workflow is unaffected — but to actually test push, you need a physical device or Android emulator with Google Play Services.

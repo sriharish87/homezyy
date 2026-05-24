@@ -4,10 +4,10 @@ import { View, ActivityIndicator } from 'react-native';
 import { Colors } from '@/constants/Theme';
 
 export default function Index() {
-  const { user, loading } = useAuth();
+  const { isAuthenticated, loading, user } = useAuth();
 
-  // Still rehydrating from AsyncStorage
-  if (loading || user === undefined) {
+  // Still loading from AsyncStorage
+  if (loading) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.background }}>
         <ActivityIndicator size="large" color={Colors.primary} />
@@ -15,5 +15,13 @@ export default function Index() {
     );
   }
 
-  return <Redirect href={user ? '/(tabs)/home' : '/welcome'} />;
+  if (!isAuthenticated) {
+    return <Redirect href="/welcome" />;
+  }
+
+  if (!user?.isProfileComplete) {
+    return <Redirect href={'/complete-profile' as any} />;
+  }
+
+  return <Redirect href="/(tabs)/home" />;
 }

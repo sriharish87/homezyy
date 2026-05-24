@@ -1,74 +1,107 @@
-import React, { useState, useRef } from 'react';
+import React from 'react';
 import {
-  View, Text, TouchableOpacity, TextInput, StyleSheet,
-  ScrollView, KeyboardAvoidingView, Platform, Animated,
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
   ActivityIndicator,
+  Animated,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '@/context/AuthContext';
 import { Colors, Typography, Spacing, Radius, Shadow } from '@/constants/Theme';
+import * as WebBrowser from 'expo-web-browser';
+import * as Google from 'expo-auth-session/providers/google';
+
+WebBrowser.maybeCompleteAuthSession();
+
+type Role = 'customer' | 'technician';
 
 export default function Login() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ role?: string }>();
   const { login } = useAuth();
 
-  const [phone,        setPhone]        = useState('');
-  const [otp,          setOtp]          = useState('');
-  const [otpSent,      setOtpSent]      = useState(false);
-  const [errorMsg,     setErrorMsg]     = useState('');
-  const [isLoading,    setIsLoading]    = useState(false);
+  const selectedRole: Role =
+    params.role === 'technician' ? 'technician' : 'customer';
 
-  // Animate OTP field in
-  const otpOpacity   = useRef(new Animated.Value(0)).current;
-  const otpTranslate = useRef(new Animated.Value(-20)).current;
+  const [isLoading, setIsLoading] = React.useState(false);
+  const [errorMessage, setErrorMessage] = React.useState('');
 
-  const showOtpField = () => {
+  // Entrance animation
+  const fadeAnim = React.useRef(new Animated.Value(0)).current;
+  const slideAnim = React.useRef(new Animated.Value(30)).current;
+
+  React.useEffect(() => {
     Animated.parallel([
-      Animated.timing(otpOpacity,   { toValue: 1, duration: 350, useNativeDriver: true }),
-      Animated.timing(otpTranslate, { toValue: 0, duration: 350, useNativeDriver: true }),
+      Animated.timing(fadeAnim, { toValue: 1, duration: 600, delay: 150, useNativeDriver: true }),
+      Animated.timing(slideAnim, { toValue: 0, duration: 600, delay: 150, useNativeDriver: true }),
     ]).start();
-  };
+  }, []);
 
-  const handleSendOtp = async () => {
-    if (!phone || phone.length < 10) {
-      setErrorMsg('Enter a valid 10-digit phone number');
+  const googleClientId =
+    process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID || '';
+
+  const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
+    clientId: googleClientId,
+    androidClientId: googleClientId,
+    iosClientId: googleClientId,
+    webClientId: googleClientId,
+  });
+
+  React.useEffect(() => {
+    const handleGoogleResponse = async () => {
+      if (!response) return;
+
+      if (response.type !== 'success') {
+        setErrorMessage('Google sign-in cancelled');
+        return;
+      }
+
+      const idToken = response.params?.id_token;
+
+      if (!idToken) {
+        setErrorMessage('Failed to get Google idToken');
+        return;
+      }
+
+      try {
+        setIsLoading(true);
+        setErrorMessage('');
+
+        const sessionUser = await login(idToken, selectedRole);
+
+        if (sessionUser) {
+          router.replace(
+            sessionUser.isProfileComplete
+              ? '/(tabs)/home'
+              : ('/complete-profile' as any)
+          );
+        }
+      } catch (error) {
+        console.error(error);
+        setErrorMessage('Google login failed');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    handleGoogleResponse();
+  }, [response, selectedRole, login, router]);
+
+  const handleGoogleLogin = async () => {
+    if (!googleClientId) {
+      setErrorMessage('Google Client ID is missing in .env');
       return;
     }
-    setErrorMsg('');
-    setIsLoading(true);
-    try {
-      // ── Backend Integration Point ──────────────────────────
-      // Replace with: await api.post('/auth/send-otp', { phone });
-      await new Promise(r => setTimeout(r, 800)); // simulated delay
-      setOtpSent(true);
-      showOtpField();
-    } catch {
-      setErrorMsg('Failed to send OTP. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
-  const handleVerifyOtp = async () => {
-    if (!otp || otp.length < 4) {
-      setErrorMsg('Enter a valid OTP');
-      return;
-    }
-    setErrorMsg('');
-    setIsLoading(true);
-    try {
-      // ── Backend Integration Point ──────────────────────────
-      // Replace with: const { user, token } = await api.post('/auth/verify-otp', { phone, otp });
-      await new Promise(r => setTimeout(r, 800));
-      await login({ id: phone, name: 'Homezy User', email: '' }, 'demo-token');
-      router.replace('/(tabs)/home');
-    } catch {
-      setErrorMsg('Invalid OTP. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
+    setErrorMessage('');
+    await promptAsync();
   };
 
   return (
@@ -84,85 +117,76 @@ export default function Login() {
             <MaterialIcons name="arrow-back" size={22} color={Colors.textPrimary} />
           </TouchableOpacity>
 
-          {/* Header */}
-          <View style={styles.header}>
-            <View style={styles.logoCircle}>
-              <MaterialIcons name="home-repair-service" size={28} color={Colors.primary} />
-            </View>
-            <Text style={styles.heading}>Sign in to Homezy</Text>
-            <Text style={styles.subheading}>Enter your phone number to continue</Text>
-          </View>
-
-          {/* Phone input */}
-          <View style={styles.card}>
-            <Text style={styles.label}>Phone Number</Text>
-            <View style={[styles.inputRow, otpSent && styles.inputDisabled]}>
-              <Text style={styles.countryCode}>🇮🇳 +91</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="98765 43210"
-                placeholderTextColor={Colors.textMuted}
-                keyboardType="phone-pad"
-                maxLength={10}
-                value={phone}
-                onChangeText={setPhone}
-                editable={!otpSent}
-              />
-              {otpSent && (
-                <MaterialIcons name="check-circle" size={20} color={Colors.success} />
-              )}
-            </View>
-
-            {/* OTP input (animated in) */}
-            {otpSent && (
-              <Animated.View style={{ opacity: otpOpacity, transform: [{ translateY: otpTranslate }] }}>
-                <Text style={[styles.label, { marginTop: Spacing.base }]}>OTP</Text>
-                <View style={styles.inputRow}>
-                  <MaterialIcons name="lock" size={20} color={Colors.textSecondary} style={{ marginRight: 8 }} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Enter 6-digit OTP"
-                    placeholderTextColor={Colors.textMuted}
-                    keyboardType="number-pad"
-                    maxLength={6}
-                    value={otp}
-                    onChangeText={setOtp}
-                    autoFocus
-                  />
-                </View>
-                <TouchableOpacity onPress={() => { setOtpSent(false); setOtp(''); }}>
-                  <Text style={styles.resendLink}>Resend OTP</Text>
-                </TouchableOpacity>
-              </Animated.View>
-            )}
-
-            {/* Error */}
-            {errorMsg ? (
-              <View style={styles.errorRow}>
-                <MaterialIcons name="error-outline" size={15} color={Colors.error} />
-                <Text style={styles.errorText}>{errorMsg}</Text>
+          <Animated.View style={[styles.cardWrapper, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
+            {/* Header */}
+            <View style={styles.header}>
+              <View style={styles.logoCircle}>
+                <MaterialIcons name="lock" size={28} color={Colors.primary} />
               </View>
-            ) : null}
+              <Text style={styles.heading}>Sign in to Homezy</Text>
+              <Text style={styles.subheading}>
+                Continue as {selectedRole === 'technician' ? 'Service Provider' : 'Household'}
+              </Text>
+            </View>
 
-            {/* CTA */}
+            {/* Card */}
+            <View style={styles.card}>
+              {/* Google icon */}
+              <View style={styles.googleIconRow}>
+                <View style={styles.googleIconCircle}>
+                  <MaterialIcons name="g-mobiledata" size={32} color={Colors.primary} />
+                </View>
+                <Text style={styles.googleLabel}>Google Account</Text>
+              </View>
+
+              <Text style={styles.googleDesc}>
+                Sign in securely using your Google account. No passwords needed.
+              </Text>
+
+              {/* Divider */}
+              <View style={styles.divider} />
+
+              {/* CTA */}
+              <TouchableOpacity
+                style={[styles.submitBtn, (isLoading || !request) && styles.disabled]}
+                onPress={handleGoogleLogin}
+                disabled={isLoading || !request}
+                activeOpacity={0.85}
+              >
+                {isLoading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <>
+                    <MaterialIcons name="login" size={20} color="#fff" style={{ marginRight: 8 }} />
+                    <Text style={styles.submitBtnText}>Continue with Google</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+
+              {/* Error */}
+              {errorMessage ? (
+                <View style={styles.errorRow}>
+                  <MaterialIcons name="error-outline" size={15} color={Colors.error} />
+                  <Text style={styles.errorText}>{errorMessage}</Text>
+                </View>
+              ) : null}
+            </View>
+
+            {/* Change role link */}
             <TouchableOpacity
-              style={[styles.submitBtn, isLoading && styles.disabled]}
-              onPress={otpSent ? handleVerifyOtp : handleSendOtp}
-              disabled={isLoading}
-              activeOpacity={0.85}
+              onPress={() => router.replace('/welcome')}
+              style={styles.changeRoleRow}
             >
-              {isLoading
-                ? <ActivityIndicator color="#fff" />
-                : <Text style={styles.submitBtnText}>{otpSent ? 'Verify & Sign In' : 'Send OTP'}</Text>
-              }
+              <MaterialIcons name="swap-horiz" size={16} color={Colors.primary} />
+              <Text style={styles.changeRoleText}>Change role</Text>
             </TouchableOpacity>
-          </View>
 
-          <Text style={styles.terms}>
-            By continuing, you agree to Homezy's{' '}
-            <Text style={styles.link}>Terms of Service</Text> and{' '}
-            <Text style={styles.link}>Privacy Policy</Text>.
-          </Text>
+            <Text style={styles.terms}>
+              By continuing, you agree to Homezy's{' '}
+              <Text style={styles.link}>Terms of Service</Text> and{' '}
+              <Text style={styles.link}>Privacy Policy</Text>.
+            </Text>
+          </Animated.View>
         </ScrollView>
       </SafeAreaView>
     </KeyboardAvoidingView>
@@ -170,11 +194,15 @@ export default function Login() {
 }
 
 const styles = StyleSheet.create({
-  root:      { flex: 1, backgroundColor: Colors.background },
-  safeArea:  { flex: 1 },
-  scroll:    { flexGrow: 1, padding: Spacing.xl },
+  root: { flex: 1, backgroundColor: Colors.background },
+  safeArea: { flex: 1 },
+  scroll: {
+    flexGrow: 1,
+    padding: Spacing.xl,
+  },
   backBtn: {
-    width: 40, height: 40,
+    width: 40,
+    height: 40,
     borderRadius: 20,
     backgroundColor: Colors.surface,
     justifyContent: 'center',
@@ -182,12 +210,17 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.xl,
     ...Shadow.sm,
   },
+  cardWrapper: {
+    flex: 1,
+    justifyContent: 'center',
+  },
   header: {
     alignItems: 'center',
     marginBottom: Spacing.xl,
   },
   logoCircle: {
-    width: 64, height: 64,
+    width: 64,
+    height: 64,
     borderRadius: 32,
     backgroundColor: Colors.primaryLight,
     justifyContent: 'center',
@@ -212,49 +245,51 @@ const styles = StyleSheet.create({
     ...Shadow.md,
     marginBottom: Spacing.xl,
   },
-  label: {
-    fontSize: Typography.sm,
-    fontFamily: 'Manrope-Bold',
-    color: Colors.textSecondary,
-    marginBottom: Spacing.xs,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  inputRow: {
+  googleIconRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: Colors.border,
-    borderRadius: Radius.md,
-    backgroundColor: Colors.surfaceAlt,
-    paddingHorizontal: Spacing.md,
-    height: 56,
+    marginBottom: Spacing.sm,
   },
-  inputDisabled: {
-    borderColor: Colors.success + '80',
-    backgroundColor: Colors.success + '10',
+  googleIconCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: Colors.primaryLight,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: Spacing.md,
   },
-  countryCode: {
+  googleLabel: {
+    fontSize: Typography.lg,
+    fontFamily: 'Manrope-Bold',
+    color: Colors.textPrimary,
+  },
+  googleDesc: {
     fontSize: Typography.base,
-    fontFamily: 'Manrope-SemiBold',
-    color: Colors.textPrimary,
-    marginRight: 8,
-    borderRightWidth: 1,
-    borderRightColor: Colors.border,
-    paddingRight: 8,
+    fontFamily: 'Manrope-Regular',
+    color: Colors.textSecondary,
+    lineHeight: 22,
+    marginBottom: Spacing.base,
   },
-  input: {
-    flex: 1,
+  divider: {
+    height: 1,
+    backgroundColor: Colors.border,
+    marginBottom: Spacing.xl,
+  },
+  submitBtn: {
+    flexDirection: 'row',
+    height: 56,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...Shadow.lg,
+  },
+  disabled: { opacity: 0.65 },
+  submitBtnText: {
+    color: '#fff',
+    fontFamily: 'Manrope-Bold',
     fontSize: Typography.md,
-    fontFamily: 'Manrope-Medium',
-    color: Colors.textPrimary,
-  },
-  resendLink: {
-    fontSize: Typography.sm,
-    fontFamily: 'Manrope-SemiBold',
-    color: Colors.primary,
-    textAlign: 'right',
-    marginTop: Spacing.sm,
   },
   errorRow: {
     flexDirection: 'row',
@@ -267,20 +302,17 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope-Medium',
     color: Colors.error,
   },
-  submitBtn: {
-    height: 56,
-    borderRadius: Radius.md,
-    backgroundColor: Colors.primary,
-    justifyContent: 'center',
+  changeRoleRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginTop: Spacing.xl,
-    ...Shadow.lg,
+    justifyContent: 'center',
+    gap: 4,
+    marginBottom: Spacing.base,
   },
-  disabled: { opacity: 0.65 },
-  submitBtnText: {
-    color: '#fff',
-    fontFamily: 'Manrope-Bold',
-    fontSize: Typography.md,
+  changeRoleText: {
+    fontSize: Typography.base,
+    fontFamily: 'Manrope-SemiBold',
+    color: Colors.primary,
   },
   terms: {
     fontSize: Typography.xs,

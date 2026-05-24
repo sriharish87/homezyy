@@ -1,35 +1,55 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, Image,
-  ScrollView, Animated, Platform,
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  Image,
+  ScrollView,
+  Animated,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, Radius, Shadow } from '@/constants/Theme';
+import { useSocket } from '@/context/SocketContext';
 
 const BOOKING_DATA = {
-  serviceName:   'Expert Electrician',
-  serviceImage:  'https://images.unsplash.com/photo-1621905251189-08b45d6a269e?w=400&q=80',
-  providerName:  'VoltMaster Pro',
-  date:          'Monday, 28th April 2026',
-  time:          '10:00 AM – 11:00 AM',
-  location:      '12, Jubilee Hills, Hyderabad',
-  bookingId:     '#HMZ-20260428',
-  price:         '₹199',
+  serviceName: 'Expert Electrician',
+  serviceImage: 'https://images.unsplash.com/photo-1621905251189-08b45d6a269e?w=400&q=80',
+  providerName: 'VoltMaster Pro',
+  date: 'Monday, 28th April 2026',
+  time: '10:00 AM - 11:00 AM',
+  location: '12, Jubilee Hills, Hyderabad',
+  bookingId: '#HMZ-20260428',
+  price: '₹199',
 };
 
 export default function BookingConfirmation() {
   const router = useRouter();
+  const params = useLocalSearchParams<{
+    bookingId?: string;
+    serviceName?: string;
+    providerName?: string;
+    date?: string;
+    time?: string;
+    price?: string;
+    status?: string;
+  }>();
+  const { bookingUpdate } = useSocket();
 
-  // ── Entrance animations ────────────────────────────────
-  const checkScale   = useRef(new Animated.Value(0)).current;
+  const [status, setStatus] = useState<'pending' | 'accepted' | 'declined'>(() => {
+    if (params.status === 'accepted' || params.status === 'declined') return params.status;
+    return 'pending';
+  });
+
+  // Entrance animations
+  const checkScale = useRef(new Animated.Value(0)).current;
   const checkOpacity = useRef(new Animated.Value(0)).current;
-  const cardSlide    = useRef(new Animated.Value(40)).current;
-  const cardOpacity  = useRef(new Animated.Value(0)).current;
+  const cardSlide = useRef(new Animated.Value(40)).current;
+  const cardOpacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    // 1. Pop the check icon in
     Animated.spring(checkScale, {
       toValue: 1,
       tension: 60,
@@ -43,7 +63,6 @@ export default function BookingConfirmation() {
       useNativeDriver: true,
     }).start();
 
-    // 2. Slide the card up with a delay
     Animated.parallel([
       Animated.timing(cardOpacity, {
         toValue: 1,
@@ -59,6 +78,49 @@ export default function BookingConfirmation() {
       }),
     ]).start();
   }, []);
+
+  useEffect(() => {
+    if (!bookingUpdate?.bookingId || !params.bookingId) return;
+    if (bookingUpdate.bookingId === params.bookingId) {
+      setStatus(bookingUpdate.status);
+    }
+  }, [bookingUpdate, params.bookingId]);
+
+  const bookingData = useMemo(() => {
+    const dateLabel = params.date
+      ? new Date(params.date).toLocaleDateString('en-IN', {
+          weekday: 'long',
+          day: '2-digit',
+          month: 'long',
+          year: 'numeric',
+        })
+      : BOOKING_DATA.date;
+
+    return {
+      serviceName: params.serviceName || BOOKING_DATA.serviceName,
+      serviceImage: BOOKING_DATA.serviceImage,
+      providerName: params.providerName || BOOKING_DATA.providerName,
+      date: dateLabel,
+      time: params.time || BOOKING_DATA.time,
+      location: BOOKING_DATA.location,
+      bookingId: params.bookingId || BOOKING_DATA.bookingId,
+      price: params.price ? `₹${params.price}` : BOOKING_DATA.price,
+    };
+  }, [params.bookingId, params.date, params.price, params.providerName, params.serviceName, params.time]);
+
+  const title =
+    status === 'accepted'
+      ? 'Booking Accepted'
+      : status === 'declined'
+      ? 'Booking Declined'
+      : 'Booking Request Sent';
+
+  const statusMessage =
+    status === 'accepted'
+      ? 'Your technician accepted the request. Proceed to payment to confirm.'
+      : status === 'declined'
+      ? 'The technician declined this request. Please select another time or technician.'
+      : 'Waiting for the technician to accept your request.';
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
@@ -79,99 +141,113 @@ export default function BookingConfirmation() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.centerContainer}>
-        {/* ── Success circle ─────────────────────────── */}
-        <Animated.View style={[styles.successWrap, { opacity: checkOpacity }]}>
-          <Animated.View style={[styles.successCircle, { transform: [{ scale: checkScale }] }]}>
-            {/* Outer glow ring */}
-            <View style={styles.glowRing} />
-            <MaterialIcons name="check-circle" size={80} color={Colors.success} />
+          {/* Success circle */}
+          <Animated.View style={[styles.successWrap, { opacity: checkOpacity }]}>
+            <Animated.View style={[styles.successCircle, { transform: [{ scale: checkScale }] }]}>
+              <View style={styles.glowRing} />
+              <MaterialIcons name="check-circle" size={80} color={Colors.success} />
+            </Animated.View>
+
+            <Text style={styles.successTitle}>{title}</Text>
+            <Text style={styles.successMsg}>{statusMessage}</Text>
+
+            <View style={styles.bookingIdRow}>
+              <Text style={styles.bookingIdLabel}>Booking ID</Text>
+              <Text style={styles.bookingId}>{bookingData.bookingId}</Text>
+            </View>
           </Animated.View>
 
-          <Text style={styles.successTitle}>Booking Confirmed!</Text>
-          <Text style={styles.successMsg}>
-            We've sent a confirmation to your email. You can view your booking details below or in the "Bookings" tab.
-          </Text>
-
-          <View style={styles.bookingIdRow}>
-            <Text style={styles.bookingIdLabel}>Booking ID</Text>
-            <Text style={styles.bookingId}>{BOOKING_DATA.bookingId}</Text>
-          </View>
-        </Animated.View>
-
-        {/* ── Booking detail card ────────────────────── */}
-        <Animated.View
-          style={[
-            styles.card,
-            { opacity: cardOpacity, transform: [{ translateY: cardSlide }] },
-          ]}
-        >
-          {/* Service image + name */}
-          <View style={styles.serviceRow}>
-            <Image
-              source={{ uri: BOOKING_DATA.serviceImage }}
-              style={styles.serviceImg}
-              resizeMode="cover"
-            />
-            <View style={styles.serviceInfo}>
-              <Text style={styles.serviceLabel}>Service</Text>
-              <Text style={styles.serviceName}>{BOOKING_DATA.serviceName}</Text>
-              <Text style={styles.providerName}>{BOOKING_DATA.providerName}</Text>
-            </View>
-            <Text style={styles.servicePrice}>{BOOKING_DATA.price}</Text>
-          </View>
-
-          {/* Divider */}
-          <View style={styles.divider} />
-
-          {/* Detail rows */}
-          {[
-            { icon: 'calendar-today', value: BOOKING_DATA.date },
-            { icon: 'schedule',       value: BOOKING_DATA.time },
-            { icon: 'location-on',    value: BOOKING_DATA.location },
-          ].map((row) => (
-            <View key={row.value} style={styles.detailRow}>
-              <View style={styles.detailIcon}>
-                <MaterialIcons name={row.icon as any} size={18} color={Colors.primary} />
+          {/* Booking detail card */}
+          <Animated.View
+            style={[
+              styles.card,
+              { opacity: cardOpacity, transform: [{ translateY: cardSlide }] },
+            ]}
+          >
+            <View style={styles.serviceRow}>
+              <Image
+                source={{ uri: bookingData.serviceImage }}
+                style={styles.serviceImg}
+                resizeMode="cover"
+              />
+              <View style={styles.serviceInfo}>
+                <Text style={styles.serviceLabel}>Service</Text>
+                <Text style={styles.serviceName}>{bookingData.serviceName}</Text>
+                <Text style={styles.providerName}>{bookingData.providerName}</Text>
               </View>
-              <Text style={styles.detailText}>{row.value}</Text>
+              <Text style={styles.servicePrice}>{bookingData.price}</Text>
             </View>
-          ))}
 
-          {/* Status chip */}
-          <View style={styles.statusRow}>
-            <MaterialIcons name="verified" size={16} color={Colors.success} />
-            <Text style={styles.statusText}>Payment confirmed • Professional assigned</Text>
-          </View>
-        </Animated.View>
+            <View style={styles.divider} />
 
-        {/* ── Action buttons ─────────────────────────── */}
-        <Animated.View style={[{ opacity: cardOpacity }, styles.buttonGroup]}>
-          <TouchableOpacity
-            style={styles.primaryBtn}
-            onPress={() => router.push('/(tabs)/bookings')}
-            activeOpacity={0.85}
-          >
-            <MaterialIcons name="calendar-month" size={18} color="#fff" />
-            <Text style={styles.primaryBtnText}>View Booking Details</Text>
-          </TouchableOpacity>
+            {[
+              { icon: 'calendar-today', value: bookingData.date },
+              { icon: 'schedule', value: bookingData.time },
+              { icon: 'location-on', value: bookingData.location },
+            ].map((row) => (
+              <View key={row.value} style={styles.detailRow}>
+                <View style={styles.detailIcon}>
+                  <MaterialIcons name={row.icon as any} size={18} color={Colors.primary} />
+                </View>
+                <Text style={styles.detailText}>{row.value}</Text>
+              </View>
+            ))}
 
-          <TouchableOpacity
-            style={styles.secondaryBtn}
-            onPress={() => router.push('/(tabs)/services')}
-            activeOpacity={0.85}
-          >
-            <MaterialIcons name="explore" size={18} color={Colors.primary} />
-            <Text style={styles.secondaryBtnText}>Explore Other Services</Text>
-          </TouchableOpacity>
+            <View style={styles.statusRow}>
+              <MaterialIcons
+                name={status === 'accepted' ? 'verified' : status === 'declined' ? 'cancel' : 'schedule'}
+                size={16}
+                color={status === 'accepted' ? Colors.success : status === 'declined' ? Colors.error : Colors.primary}
+              />
+              <Text style={styles.statusText}>
+                {status === 'accepted'
+                  ? 'Accepted - proceed to payment'
+                  : status === 'declined'
+                  ? 'Declined - try another time'
+                  : 'Pending - awaiting response'}
+              </Text>
+            </View>
+          </Animated.View>
 
-          <TouchableOpacity
-            style={styles.ghostBtn}
-            onPress={() => router.push('/(tabs)/home')}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.ghostBtnText}>Back to Home</Text>
-          </TouchableOpacity>
-        </Animated.View>
+          {/* Action buttons */}
+          <Animated.View style={[{ opacity: cardOpacity }, styles.buttonGroup]}>
+            <TouchableOpacity
+              style={styles.primaryBtn}
+              onPress={() => router.push('/(tabs)/bookings')}
+              activeOpacity={0.85}
+            >
+              <MaterialIcons name="calendar-month" size={18} color="#fff" />
+              <Text style={styles.primaryBtnText}>View Booking Details</Text>
+            </TouchableOpacity>
+
+            {status === 'accepted' && (
+              <TouchableOpacity
+                style={styles.payBtn}
+                onPress={() => router.push('/(tabs)/bookings')}
+                activeOpacity={0.85}
+              >
+                <MaterialIcons name="payments" size={18} color="#fff" />
+                <Text style={styles.payBtnText}>Pay Now</Text>
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity
+              style={styles.secondaryBtn}
+              onPress={() => router.push('/(tabs)/services')}
+              activeOpacity={0.85}
+            >
+              <MaterialIcons name="explore" size={18} color={Colors.primary} />
+              <Text style={styles.secondaryBtnText}>Explore Other Services</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.ghostBtn}
+              onPress={() => router.push('/(tabs)/home')}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.ghostBtnText}>Back to Home</Text>
+            </TouchableOpacity>
+          </Animated.View>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -193,9 +269,12 @@ const styles = StyleSheet.create({
     ...Shadow.sm,
   },
   backBtn: {
-    width: 40, height: 40, borderRadius: 20,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: Colors.surfaceAlt,
-    justifyContent: 'center', alignItems: 'center',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   navTitle: {
     fontSize: Typography.md,
@@ -214,7 +293,6 @@ const styles = StyleSheet.create({
     gap: 24,
   },
 
-  // Success section
   successWrap: {
     alignItems: 'center',
     paddingVertical: Spacing.xl,
@@ -268,7 +346,6 @@ const styles = StyleSheet.create({
     color: Colors.primary,
   },
 
-  // Booking detail card
   card: {
     backgroundColor: Colors.surface,
     borderRadius: Radius.xl,
@@ -284,7 +361,8 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.base,
   },
   serviceImg: {
-    width: 64, height: 64,
+    width: 64,
+    height: 64,
     borderRadius: Radius.md,
     backgroundColor: Colors.border,
   },
@@ -327,9 +405,12 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
   },
   detailIcon: {
-    width: 36, height: 36, borderRadius: 18,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: Colors.primaryLight,
-    justifyContent: 'center', alignItems: 'center',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   detailText: {
     flex: 1,
@@ -353,7 +434,6 @@ const styles = StyleSheet.create({
     color: Colors.success,
   },
 
-  // Buttons
   buttonGroup: {
     gap: 12,
     width: '100%',
@@ -372,6 +452,20 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontFamily: 'Manrope-Bold',
     fontSize: Typography.base,
+  },
+  payBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    borderRadius: Radius.md,
+  },
+  payBtnText: {
+    fontSize: Typography.base,
+    fontFamily: 'Manrope-Bold',
+    color: '#fff',
   },
   secondaryBtn: {
     flexDirection: 'row',
