@@ -30,6 +30,7 @@ export interface User {
   profilePic?: string;
   role?: 'customer' | 'technician';
   isProfileComplete: boolean;
+  isAvailable?: boolean;
 }
 
 type AuthRole = 'customer' | 'technician';

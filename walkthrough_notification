@@ -1,0 +1,99 @@
+# Walkthrough: Dual-Strike Notification System
+
+## Summary
+Implemented Expo Push Notifications as an offline safety net alongside the existing Socket.IO system. The system follows a "Dual-Strike" pattern:
+- **App OPEN** → Push banners silently suppressed; WebSocket handles everything
+- **App CLOSED/BACKGROUNDED** → Push banner appears; tapping routes to the correct screen
+
+**Zero changes** to existing WebSocket logic. All push code is additive.
+
+---
+
+## Architecture
+
+```mermaid
+graph TD
+    A["Backend Trigger Event"] --> B["Socket.IO Emit (existing)"]
+    A --> C["Expo Push Send (new)"]
+    B --> D{"App State?"}
+    C --> D
+    D -->|Foreground| E["WebSocket updates UI"]
+    D -->|Foreground| F["Traffic Cop MUTES push banner"]
+    D -->|Background/Killed| G["OS shows push banner"]
+    D -->|Background/Killed| H["WebSocket disconnected"]
+    G -->|User taps| I["Deep-link routes to screen"]
+```
+
+---
+
+## Files Changed
+
+### Backend — New Files
+
+| File | Purpose |
+|------|---------|
+| [sendPushNotification.js](file:///c:/Users/Sriharish/Desktop/FIXI-BACKEND/FIXI-BACKEND/utils/sendPushNotification.js) | Reusable utility using `expo-server-sdk` to send push messages |
+| [pushToken.js](file:///c:/Users/Sriharish/Desktop/FIXI-BACKEND/FIXI-BACKEND/routes/pushToken.js) | `POST /push-token/register` endpoint for saving tokens |
+
+### Backend — Modified Files
+
+| File | Change |
+|------|--------|
+| [users.js](file:///c:/Users/Sriharish/Desktop/FIXI-BACKEND/FIXI-BACKEND/model/users.js) | Added `pushToken` field |
+| [technicians.js](file:///c:/Users/Sriharish/Desktop/FIXI-BACKEND/FIXI-BACKEND/model/technicians.js) | Added `pushToken` field |
+| [bookingcontroller.js](file:///c:/Users/Sriharish/Desktop/FIXI-BACKEND/FIXI-BACKEND/controllers/bookingcontroller.js) | Trigger 1: Push to technician on new booking |
+| [server.js](file:///c:/Users/Sriharish/Desktop/FIXI-BACKEND/FIXI-BACKEND/server.js) | Trigger 2: Push to customer on accept/decline + mounted push-token route |
+| [paymentController.js](file:///c:/Users/Sriharish/Desktop/FIXI-BACKEND/FIXI-BACKEND/controllers/paymentController.js) | Trigger 3: Push to technician on payment verified |
+| [package.json](file:///c:/Users/Sriharish/Desktop/FIXI-BACKEND/FIXI-BACKEND/package.json) | Added `expo-server-sdk` dependency |
+
+### Frontend — New Files
+
+| File | Purpose |
+|------|---------|
+| [usePushNotifications.ts](file:///c:/Users/Sriharish/Desktop/FIXI-FRONTEND/homezyy/homezyy/hooks/usePushNotifications.ts) | Hook for permission, token generation, and backend registration |
+
+### Frontend — Modified Files
+
+| File | Change |
+|------|--------|
+| [_layout.tsx](file:///c:/Users/Sriharish/Desktop/FIXI-FRONTEND/homezyy/homezyy/app/_layout.tsx) | Traffic Cop (suppress foreground banners) + PushNotificationBootstrap component (token registration + deep-link routing on tap) |
+| [app.json](file:///c:/Users/Sriharish/Desktop/FIXI-FRONTEND/homezyy/homezyy/app.json) | Added `expo-notifications` plugin |
+| [package.json](file:///c:/Users/Sriharish/Desktop/FIXI-FRONTEND/homezyy/homezyy/package.json) | Added `expo-notifications`, `expo-device`, `expo-constants` |
+
+---
+
+## The 3 Push Notification Triggers
+
+| # | Event | Recipient | Push Title | Route on Tap |
+|---|-------|-----------|-----------|--------------|
+| 1 | Customer creates booking | **Technician** | 🔧 New Booking Request! | `/(tabs)/home` |
+| 2 | Technician accepts/declines | **Customer** | ✅ Booking Accepted! / ❌ Booking Declined | `/(tabs)/bookings` |
+| 3 | Payment verified | **Technician** | 💰 Payment Received! | `/wallet` |
+
+---
+
+## Verification Results
+
+### Backend
+- `node -e "require('./utils/sendPushNotification'); require('./routes/pushToken')"` → ✅ Loads without errors
+
+### Frontend
+- `npx expo export --platform web` → ✅ 1502 modules bundled, 19 routes, 0 errors
+- The expected web warning `[expo-notifications] Listening to push token changes is not yet fully supported on web` confirms the native-only guard is working correctly
+
+---
+
+## Testing Instructions
+
+> [!CAUTION]
+> Push notifications **cannot** be tested on Expo Web. You need a physical device.
+
+### Steps to test on a physical Android device:
+1. Install **Expo Go** from the Play Store
+2. Run `npx expo start` in the frontend directory
+3. Scan the QR code with Expo Go
+4. Login as a technician → check MongoDB for `pushToken` field on the technician document
+5. From Postman/another device, create a booking invite targeting that technician
+6. **App in foreground**: No push banner appears (Traffic Cop suppresses it), WebSocket popup shows instead
+7. **App backgrounded**: Push banner appears with "🔧 New Booking Request!"
+8. **Tap the banner**: App opens and routes to the Home screen

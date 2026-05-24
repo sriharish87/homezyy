@@ -1,80 +1,76 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
   Image, FlatList, ActivityIndicator, RefreshControl,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, Radius, Shadow } from '@/constants/Theme';
 import { useAuth } from '@/context/AuthContext';
+import { useSocket } from '@/context/SocketContext';
 import { usePaymentFlow } from '@/hooks/usePaymentFlow';
-import { fetchUpcomingUnpaidBookings, UnpaidBooking } from '@/services/paymentService';
 import PaymentResultModal from '@/components/ui/PaymentResultModal';
+import api from '@/lib/axiosConfig';
 
 // ── Types ──────────────────────────────────────────────────
 
-type BookingStatus = 'upcoming' | 'completed' | 'cancelled';
+type BookingStatus = 'pending' | 'accepted' | 'rejected' | 'completed' | 'expired';
 
-interface Booking {
+interface UnifiedBooking {
   id: string;
-  serviceName: string;
-  providerName: string;
-  category: string;
-  date: string;
-  time: string;
-  location: string;
-  price: string;
+  serviceTitle: string;
+  price: number;
   status: BookingStatus;
-  serviceImage: string;
-  rating?: number;
-  /** If the booking is unpaid and accepted — eligible for payment */
-  bookingId?: string;
-  isPaid?: boolean;
+  bookingTime: string;
+  createdAt: string;
+  counterparty?: {
+    id: string;
+    name: string;
+    role: string;
+    phone: string;
+    avatar?: string;
+    rating?: number;
+  } | null;
+  location?: {
+    addressText: string;
+  } | null;
 }
 
-// ── Mock data (completed & cancelled) ──────────────────────
+// ── Formatting ─────────────────────────────────────────────
 
-const MOCK_STATIC_BOOKINGS: Booking[] = [
-  {
-    id: 'b2',
-    serviceName: 'Kitchen deep cleaning',
-    providerName: 'SparkleClean Solutions',
-    category: 'Cleaning',
-    date: 'Saturday, 19th April 2026',
-    time: '09:00 AM – 12:00 PM',
-    location: '45, Banjara Hills, Hyderabad',
-    price: '₹999',
-    status: 'completed',
-    serviceImage: 'https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?w=200&q=80',
-    rating: 5,
-    isPaid: true,
-  },
-  {
-    id: 'b3',
-    serviceName: 'AC Basic service',
-    providerName: 'CoolAir Solutions',
-    category: 'AC Repair',
-    date: 'Friday, 11th April 2026',
-    time: '02:00 PM – 03:30 PM',
-    location: '7, Madhapur, Hyderabad',
-    price: '₹499',
-    status: 'cancelled',
-    serviceImage: 'https://images.unsplash.com/photo-1621905251189-08b45d6a269e?w=200&q=80',
-    isPaid: false,
-  },
-];
+function formatBookingTime(isoDate: string) {
+  const date = new Date(isoDate);
+  if (isNaN(date.getTime())) return isoDate;
+
+  const today = new Date();
+  const tomorrow = new Date(today);
+  tomorrow.setDate(today.getDate() + 1);
+
+  const isToday = date.toDateString() === today.toDateString();
+  const isTomorrow = date.toDateString() === tomorrow.toDateString();
+
+  const timeString = date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+
+  if (isToday) return `Today, ${timeString}`;
+  if (isTomorrow) return `Tomorrow, ${timeString}`;
+
+  const dateString = date.toLocaleDateString('en-IN', { weekday: 'short', month: 'short', day: 'numeric' });
+  return `${dateString}, ${timeString}`;
+}
 
 // ── Status chip ────────────────────────────────────────────
 
 const STATUS_META: Record<BookingStatus, { label: string; color: string; bg: string; icon: string }> = {
-  upcoming:  { label: 'Upcoming',  color: '#2563eb', bg: '#dbeafe', icon: 'schedule' },
+  pending:   { label: 'Pending',   color: '#d97706', bg: '#fef3c7', icon: 'schedule' },
+  accepted:  { label: 'Accepted',  color: '#2563eb', bg: '#dbeafe', icon: 'thumb-up' },
   completed: { label: 'Completed', color: '#059669', bg: '#d1fae5', icon: 'check-circle' },
-  cancelled: { label: 'Cancelled', color: '#dc2626', bg: '#fee2e2', icon: 'cancel' },
+  rejected:  { label: 'Cancelled', color: '#dc2626', bg: '#fee2e2', icon: 'cancel' },
+  expired:   { label: 'Expired',   color: '#dc2626', bg: '#fee2e2', icon: 'cancel' },
 };
 
 function StatusChip({ status }: { status: BookingStatus }) {
-  const meta = STATUS_META[status];
+  const meta = STATUS_META[status] || { label: status, color: '#666', bg: '#eee', icon: 'info' };
   return (
     <View style={[chip.wrap, { backgroundColor: meta.bg }]}>
       <MaterialIcons name={meta.icon as any} size={12} color={meta.color} />
@@ -97,90 +93,104 @@ const chip = StyleSheet.create({
 
 function BookingCard({
   booking,
+  isCustomer,
   onPress,
   onPayNow,
   paymentLoading,
+  onRespond,
 }: {
-  booking: Booking;
+  booking: UnifiedBooking;
+  isCustomer: boolean;
   onPress: () => void;
   onPayNow?: () => void;
   paymentLoading?: boolean;
+  onRespond: (status: 'accepted' | 'declined') => void;
 }) {
+  const formattedTime = formatBookingTime(booking.bookingTime);
+  const counterpartyName = booking.counterparty?.name || 'Unknown';
+  const roleLabel = isCustomer ? 'Technician' : 'Customer';
+  const avatar = booking.counterparty?.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(counterpartyName)}`;
+
   return (
     <TouchableOpacity style={bc.card} onPress={onPress} activeOpacity={0.88}>
-      {/* Service image */}
-      <Image source={{ uri: booking.serviceImage }} style={bc.img} resizeMode="cover" />
-
       <View style={bc.body}>
         <View style={bc.topRow}>
-          <Text style={bc.serviceName} numberOfLines={1}>{booking.serviceName}</Text>
+          <Text style={bc.serviceName} numberOfLines={1}>{booking.serviceTitle}</Text>
           <StatusChip status={booking.status} />
         </View>
 
-        <Text style={bc.provider}>{booking.providerName}</Text>
+        {/* Smart Identity Swap */}
+        <View style={bc.identityRow}>
+          <Image source={{ uri: avatar }} style={bc.avatar} />
+          <View style={bc.identityInfo}>
+            <Text style={bc.provider}>{roleLabel}: {counterpartyName}</Text>
+            {isCustomer && booking.counterparty?.rating && (
+              <View style={bc.ratingBadge}>
+                <MaterialIcons name="star" size={12} color={Colors.star} />
+                <Text style={bc.ratingText}>{booking.counterparty.rating}</Text>
+              </View>
+            )}
+            {!isCustomer && booking.location?.addressText && (
+              <Text style={bc.addressText} numberOfLines={1}>{booking.location.addressText}</Text>
+            )}
+          </View>
+        </View>
 
         <View style={bc.detail}>
-          <MaterialIcons name="calendar-today" size={14} color={Colors.textMuted} />
-          <Text style={bc.detailText}>{booking.date}</Text>
-        </View>
-        <View style={bc.detail}>
-          <MaterialIcons name="schedule" size={14} color={Colors.textMuted} />
-          <Text style={bc.detailText}>{booking.time}</Text>
-        </View>
-        <View style={bc.detail}>
-          <MaterialIcons name="location-on" size={14} color={Colors.textMuted} />
-          <Text style={bc.detailText} numberOfLines={1}>{booking.location}</Text>
+          <MaterialIcons name="event" size={14} color={Colors.textMuted} />
+          <Text style={bc.detailText}>{formattedTime}</Text>
         </View>
 
         <View style={bc.footer}>
-          <Text style={bc.price}>{booking.price}</Text>
+          <Text style={bc.price}>₹{booking.price?.toLocaleString('en-IN')}</Text>
 
-          {booking.status === 'completed' && (
-            <TouchableOpacity style={bc.rateBtn}>
-              <MaterialIcons name="star" size={14} color={Colors.star} />
-              <Text style={bc.rateBtnText}>Rate Service</Text>
-            </TouchableOpacity>
-          )}
+          {/* Contextual CTA */}
+          <View style={bc.actions}>
+            {isCustomer && booking.status === 'accepted' && (
+               <TouchableOpacity
+                 style={[bc.payNowBtn, paymentLoading && bc.payNowBtnDisabled]}
+                 onPress={(e) => {
+                   e.stopPropagation?.();
+                   if (onPayNow) onPayNow();
+                 }}
+                 disabled={paymentLoading}
+                 activeOpacity={0.8}
+               >
+                 {paymentLoading ? (
+                   <ActivityIndicator size="small" color="#fff" />
+                 ) : (
+                   <>
+                     <MaterialIcons name="payment" size={14} color="#fff" />
+                     <Text style={bc.payNowBtnText}>Pay Now</Text>
+                   </>
+                 )}
+               </TouchableOpacity>
+            )}
 
-          {booking.status === 'upcoming' && !booking.isPaid && onPayNow && (
-            <TouchableOpacity
-              style={[bc.payNowBtn, paymentLoading && bc.payNowBtnDisabled]}
-              onPress={(e) => {
-                e.stopPropagation?.();
-                onPayNow();
-              }}
-              disabled={paymentLoading}
-              activeOpacity={0.8}
-            >
-              {paymentLoading ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <>
-                  <MaterialIcons name="payment" size={14} color="#fff" />
-                  <Text style={bc.payNowBtnText}>Pay Now</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          )}
+            {!isCustomer && booking.status === 'pending' && (
+              <View style={bc.techActions}>
+                <TouchableOpacity
+                  style={bc.declineBtn}
+                  onPress={(e) => { e.stopPropagation?.(); onRespond('declined'); }}
+                >
+                  <Text style={bc.declineBtnText}>Decline</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={bc.acceptBtn}
+                  onPress={(e) => { e.stopPropagation?.(); onRespond('accepted'); }}
+                >
+                  <Text style={bc.acceptBtnText}>Accept</Text>
+                </TouchableOpacity>
+              </View>
+            )}
 
-          {booking.status === 'upcoming' && booking.isPaid && (
-            <View style={bc.paidBadge}>
-              <MaterialIcons name="check-circle" size={14} color={Colors.success} />
-              <Text style={bc.paidBadgeText}>Paid</Text>
-            </View>
-          )}
-
-          {booking.status === 'upcoming' && !booking.isPaid && !onPayNow && (
-            <TouchableOpacity style={bc.cancelBtn}>
-              <Text style={bc.cancelBtnText}>Cancel</Text>
-            </TouchableOpacity>
-          )}
-
-          {booking.status === 'cancelled' && (
-            <TouchableOpacity style={bc.rebookBtn}>
-              <Text style={bc.rebookBtnText}>Rebook</Text>
-            </TouchableOpacity>
-          )}
+            {booking.status === 'completed' && (
+              <TouchableOpacity style={bc.rateBtn}>
+                <MaterialIcons name="star" size={14} color={Colors.star} />
+                <Text style={bc.rateBtnText}>Rate Service</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
       </View>
     </TouchableOpacity>
@@ -195,17 +205,12 @@ const bc = StyleSheet.create({
     borderColor: Colors.borderLight,
     ...Shadow.sm,
   },
-  img: {
-    width: '100%',
-    height: 140,
-    backgroundColor: Colors.border,
-  },
   body: { padding: Spacing.base },
   topRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 4,
+    marginBottom: 12,
     gap: 8,
   },
   serviceName: {
@@ -214,11 +219,33 @@ const bc = StyleSheet.create({
     fontFamily: 'Manrope-Bold',
     color: Colors.textPrimary,
   },
+  identityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 12,
+    backgroundColor: Colors.surfaceAlt,
+    padding: 8,
+    borderRadius: Radius.lg,
+  },
+  avatar: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: Colors.border,
+  },
+  identityInfo: { flex: 1 },
   provider: {
     fontSize: Typography.sm,
-    fontFamily: 'Manrope-Medium',
-    color: Colors.primary,
-    marginBottom: Spacing.sm,
+    fontFamily: 'Manrope-Bold',
+    color: Colors.textPrimary,
+  },
+  ratingBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: 2,
+  },
+  ratingText: {
+    fontSize: 12, fontFamily: 'Manrope-Medium', color: Colors.textSecondary,
+  },
+  addressText: {
+    fontSize: 12, fontFamily: 'Manrope-Regular', color: Colors.textSecondary, marginTop: 2,
   },
   detail: {
     flexDirection: 'row',
@@ -228,7 +255,7 @@ const bc = StyleSheet.create({
   },
   detailText: {
     fontSize: Typography.sm,
-    fontFamily: 'Manrope-Regular',
+    fontFamily: 'Manrope-Medium',
     color: Colors.textSecondary,
     flex: 1,
   },
@@ -245,6 +272,9 @@ const bc = StyleSheet.create({
     fontSize: Typography.lg,
     fontFamily: 'Manrope-Black',
     color: Colors.primary,
+  },
+  actions: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
   },
   rateBtn: {
     flexDirection: 'row',
@@ -279,55 +309,40 @@ const bc = StyleSheet.create({
     fontFamily: 'Manrope-Bold',
     color: '#fff',
   },
-  paidBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#d1fae5',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+  techActions: {
+    flexDirection: 'row', gap: 8,
+  },
+  declineBtn: {
+    paddingHorizontal: 12, paddingVertical: 8,
     borderRadius: Radius.full,
+    borderWidth: 1, borderColor: Colors.border,
   },
-  paidBadgeText: {
-    fontSize: Typography.sm,
-    fontFamily: 'Manrope-Bold',
-    color: Colors.success,
+  declineBtnText: {
+    fontSize: Typography.sm, fontFamily: 'Manrope-Bold', color: Colors.textSecondary,
   },
-  cancelBtn: {
-    borderWidth: 1,
-    borderColor: Colors.error,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+  acceptBtn: {
+    paddingHorizontal: 14, paddingVertical: 8,
     borderRadius: Radius.full,
+    backgroundColor: Colors.primary,
   },
-  cancelBtnText: {
-    fontSize: Typography.sm,
-    fontFamily: 'Manrope-SemiBold',
-    color: Colors.error,
-  },
-  rebookBtn: {
-    backgroundColor: Colors.primaryLight,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: Radius.full,
-  },
-  rebookBtnText: {
-    fontSize: Typography.sm,
-    fontFamily: 'Manrope-Bold',
-    color: Colors.primary,
+  acceptBtnText: {
+    fontSize: Typography.sm, fontFamily: 'Manrope-Bold', color: '#fff',
   },
 });
 
 // ── Main screen ────────────────────────────────────────────
 
-type FilterTab = 'all' | 'upcoming' | 'completed' | 'cancelled';
+type FilterTab = 'upcoming' | 'completed';
 
 export default function BookingsScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  const [activeFilter, setActiveFilter] = useState<FilterTab>('all');
-  const [unpaidBookings, setUnpaidBookings] = useState<Booking[]>([]);
-  const [loadingUnpaid, setLoadingUnpaid] = useState(false);
+  const { respondBooking } = useSocket();
+  const isCustomer = user?.role === 'customer';
+
+  const [activeTab, setActiveTab] = useState<FilterTab>('upcoming');
+  const [bookings, setBookings] = useState<UnifiedBooking[]>([]);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [payingBookingId, setPayingBookingId] = useState<string | null>(null);
 
@@ -341,171 +356,159 @@ export default function BookingsScreen() {
   } = usePaymentFlow({
     onSuccess: () => {
       setPayingBookingId(null);
-      loadUnpaidBookings(); // Refresh the list
+      loadBookings(); // Refresh the list
     },
-    onError: () => {
-      // Don't clear payingBookingId — user can retry
-    },
+    onError: () => {},
     onClose: () => {
       setPayingBookingId(null);
     },
   });
 
-  // ── Fetch unpaid bookings from API ───────────────────────
-  const loadUnpaidBookings = useCallback(async () => {
+  // ── Fetch unified bookings ───────────────────────────────
+  const loadBookings = useCallback(async () => {
     try {
-      setLoadingUnpaid(true);
-      const data = await fetchUpcomingUnpaidBookings();
-
-      const mapped: Booking[] = data.map((b: UnpaidBooking) => ({
-        id: b.bookingId,
-        bookingId: b.bookingId,
-        serviceName: b.serviceName || 'Service',
-        providerName: b.providerName || 'Homezy Professional',
-        category: b.category || 'General',
-        date: b.date || 'Scheduled',
-        time: b.time || '',
-        location: b.location || '',
-        price: `₹${b.price?.toLocaleString('en-IN') ?? '0'}`,
-        status: 'upcoming' as BookingStatus,
-        serviceImage:
-          b.serviceImage ||
-          'https://images.unsplash.com/photo-1585771724684-38269d6639fd?w=200&q=80',
-        isPaid: false,
-      }));
-
-      setUnpaidBookings(mapped);
+      setLoading(true);
+      const response = await api.get('/bookings/my');
+      setBookings(response.data || []);
     } catch (err) {
-      console.error('[BookingsScreen] Failed to load unpaid bookings:', err);
+      console.error('[BookingsScreen] Failed to load bookings:', err);
     } finally {
-      setLoadingUnpaid(false);
+      setLoading(false);
     }
   }, []);
 
-  useEffect(() => {
-    if (user?.role === 'customer') {
-      loadUnpaidBookings();
-    }
-  }, [user?.role, loadUnpaidBookings]);
+  useFocusEffect(
+    useCallback(() => {
+      loadBookings();
+    }, [loadBookings])
+  );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await loadUnpaidBookings();
+    await loadBookings();
     setRefreshing(false);
-  }, [loadUnpaidBookings]);
+  }, [loadBookings]);
 
-  // ── Merge unpaid + static bookings ───────────────────────
-  const allBookings = [...unpaidBookings, ...MOCK_STATIC_BOOKINGS];
+  // ── Handle Respond for Techs ─────────────────────────────
+  const handleRespond = (bookingId: string, status: 'accepted' | 'declined') => {
+    const b = bookings.find((x) => x.id === bookingId);
+    if (!b || !b.counterparty) return;
+    
+    // Optimistic UI update
+    setBookings((prev) =>
+      prev.map((item) =>
+        item.id === bookingId ? { ...item, status: status === 'accepted' ? 'accepted' : 'rejected' } : item
+      )
+    );
 
-  const filtered = allBookings.filter(
-    (b) => activeFilter === 'all' || b.status === activeFilter
-  );
-
-  const filterTabs: { id: FilterTab; label: string }[] = [
-    { id: 'all',       label: 'All' },
-    { id: 'upcoming',  label: 'Upcoming' },
-    { id: 'completed', label: 'Completed' },
-    { id: 'cancelled', label: 'Cancelled' },
-  ];
-
-  const handlePayNow = (bookingId: string) => {
-    setPayingBookingId(bookingId);
-    initiatePayment(bookingId);
+    respondBooking({
+      bookingId,
+      status,
+      customerId: b.counterparty.id,
+    });
   };
+
+  // ── Filter logic ─────────────────────────────────────────
+  const filteredBookings = useMemo(() => {
+    const now = new Date();
+    
+    // First, filter by the existing time logic as requested
+    const filtered = bookings.filter((b) => {
+      const bTime = new Date(b.bookingTime);
+      const isFuture = bTime > now;
+      const isFinishedStatus = ['completed', 'rejected', 'expired'].includes(b.status);
+
+      if (activeTab === 'upcoming') {
+        return isFuture && !isFinishedStatus;
+      } else {
+        return !isFuture || isFinishedStatus;
+      }
+    });
+
+    // Then, sort the filtered array
+    return filtered.sort((a, b) => {
+      const timeA = new Date(a.bookingTime).getTime();
+      const timeB = new Date(b.bookingTime).getTime();
+      
+      if (activeTab === 'upcoming') {
+        return timeA - timeB; // Ascending: soonest first
+      } else {
+        return timeB - timeA; // Descending: most recent first
+      }
+    });
+  }, [bookings, activeTab]);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
-      {/* Header Area */}
+      {/* ── Header ────────────────────────────────────────── */}
       <View style={styles.header}>
-        <Text style={styles.pageTitle}>My Bookings</Text>
-        <Text style={styles.pageSubtitle}>Track and manage your service history</Text>
+        <Text style={styles.title}>My Bookings</Text>
       </View>
 
-      {/* Filter tabs inside the header area */}
-      <View style={styles.filterContainer}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.filterRow}
-          style={styles.filterScroll}
-        >
-          {filterTabs.map((tab) => (
+      {/* ── Custom Tabs ───────────────────────────────────── */}
+      <View style={styles.tabsWrap}>
+        {(['upcoming', 'completed'] as FilterTab[]).map((tab) => {
+          const isActive = activeTab === tab;
+          return (
             <TouchableOpacity
-              key={tab.id}
-              style={[styles.filterTab, activeFilter === tab.id && styles.filterTabActive]}
-              onPress={() => setActiveFilter(tab.id)}
-              activeOpacity={0.7}
+              key={tab}
+              style={[styles.tab, isActive && styles.tabActive]}
+              onPress={() => setActiveTab(tab)}
+              activeOpacity={0.8}
             >
-              <Text style={[styles.filterTabText, activeFilter === tab.id && styles.filterTabTextActive]}>
-                {tab.label}
+              <Text style={[styles.tabText, isActive && styles.tabTextActive]}>
+                {tab === 'upcoming' ? 'Upcoming' : 'Past'}
               </Text>
             </TouchableOpacity>
-          ))}
-        </ScrollView>
+          );
+        })}
       </View>
 
-      {/* Main List Area */}
-      <View style={styles.mainContent}>
-        {loadingUnpaid && unpaidBookings.length === 0 ? (
-          <View style={styles.emptyState}>
-            <ActivityIndicator size="large" color={Colors.primary} />
-            <Text style={styles.emptyDesc}>Loading bookings...</Text>
-          </View>
-        ) : filtered.length === 0 ? (
-          <View style={styles.emptyState}>
-            <MaterialIcons name="calendar-month" size={64} color={Colors.border} />
-            <Text style={styles.emptyTitle}>No bookings yet</Text>
-            <Text style={styles.emptyDesc}>Your booking history will appear here.</Text>
-            <TouchableOpacity
-              style={styles.exploreBtn}
-              onPress={() => router.push('/(tabs)/services')}
-            >
-              <Text style={styles.exploreBtnText}>Explore Services</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <FlatList
-            data={filtered}
-            keyExtractor={(item) => item.id}
-            renderItem={({ item }) => (
-              <BookingCard
-                booking={item}
-                onPress={() => router.push('/bookings/booking-confirmation')}
-                onPayNow={
-                  item.status === 'upcoming' && !item.isPaid && item.bookingId
-                    ? () => handlePayNow(item.bookingId!)
-                    : undefined
-                }
-                paymentLoading={paymentLoading && payingBookingId === item.bookingId}
-              />
-            )}
-            contentContainerStyle={styles.list}
-            showsVerticalScrollIndicator={false}
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={onRefresh}
-                tintColor={Colors.primary}
-                colors={[Colors.primary]}
-              />
-            }
-          />
-        )}
+      {/* ── List ──────────────────────────────────────────── */}
+      {loading ? (
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+        </View>
+      ) : (
+        <FlatList
+          data={filteredBookings}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+          ListEmptyComponent={
+            <View style={styles.emptyState}>
+              <View style={styles.emptyIconWrap}>
+                <MaterialIcons name="event-busy" size={48} color={Colors.border} />
+              </View>
+              <Text style={styles.emptyTitle}>No {activeTab} bookings</Text>
+              <Text style={styles.emptyDesc}>
+                {isCustomer ? "You don't have any bookings here. Check back later!" : "No jobs assigned here."}
+              </Text>
+            </View>
+          }
+          ItemSeparatorComponent={() => <View style={{ height: Spacing.base }} />}
+          renderItem={({ item }) => (
+            <BookingCard
+              booking={item}
+              isCustomer={isCustomer}
+              onPress={() => {
+                // Future detail screen routing
+              }}
+              onPayNow={() => {
+                setPayingBookingId(item.id);
+                initiatePayment(item.id);
+              }}
+              paymentLoading={paymentLoading && payingBookingId === item.id}
+              onRespond={(status) => handleRespond(item.id, status)}
+            />
+          )}
+        />
+      )}
 
-        {/* ── Razorpay error toast ── */}
-        {razorpayError && !paymentLoading && (
-          <View style={styles.toastBar}>
-            <MaterialIcons name="warning" size={16} color="#f59e0b" />
-            <Text style={styles.toastText} numberOfLines={2}>
-              {razorpayError}
-            </Text>
-          </View>
-        )}
-      </View>
-
-      {/* ── Payment result modal (5 scenarios) ── */}
+      {/* ── Payment Modals ────────────────────────────────── */}
       <PaymentResultModal
-        result={paymentResult}
+        result={paymentResult ? 'success' : razorpayError ? 'server_error' : null}
         onDismiss={dismissResult}
       />
     </SafeAreaView>
@@ -513,127 +516,57 @@ export default function BookingsScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#fff' },
+  safeArea: { flex: 1, backgroundColor: Colors.background },
   header: {
-    backgroundColor: '#3e2a56',
-    paddingTop: 60,
-    paddingBottom: 32,
-    paddingHorizontal: 24,
-    alignItems: 'center',
-    ...Shadow.lg,
+    paddingHorizontal: Spacing.base,
+    paddingTop: Spacing.lg,
+    paddingBottom: Spacing.base,
+    backgroundColor: Colors.surface,
   },
-  pageTitle: {
-    fontSize: 28,
+  title: {
+    fontSize: Typography['2xl'],
     fontFamily: 'Manrope-Black',
-    color: '#fff',
-    letterSpacing: -0.5,
+    color: Colors.textPrimary,
   },
-  pageSubtitle: {
-    fontSize: 14,
-    fontFamily: 'Manrope-Medium',
-    color: 'rgba(255,255,255,0.7)',
-    marginTop: 4,
-    textAlign: 'center',
-  },
-  mainContent: {
-    flex: 1,
-    backgroundColor: '#fff',
-  },
-  filterContainer: {
-    backgroundColor: '#3e2a56',
-    paddingBottom: 20,
-    paddingHorizontal: 24,
-    borderBottomLeftRadius: 32,
-    borderBottomRightRadius: 32,
-  },
-  filterScroll: {
-    maxHeight: 50,
-  },
-  filterRow: {
-    gap: 12,
+  tabsWrap: {
     flexDirection: 'row',
-    alignItems: 'center',
+    backgroundColor: Colors.surface,
+    paddingHorizontal: Spacing.base,
+    paddingBottom: Spacing.base,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.borderLight,
   },
-  filterTab: {
-    paddingHorizontal: 20,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 20,
-    minWidth: 80,
+  tab: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: Radius.full,
+    marginRight: 8,
+    backgroundColor: Colors.surfaceAlt,
   },
-  filterTabActive: {
-    backgroundColor: '#fff',
-  },
-  filterTabText: {
-    fontSize: 13,
+  tabActive: { backgroundColor: Colors.primary },
+  tabText: {
+    fontSize: Typography.sm,
     fontFamily: 'Manrope-Bold',
-    color: 'rgba(255,255,255,0.8)',
+    color: Colors.textSecondary,
   },
-  filterTabTextActive: {
-    color: '#3e2a56',
-  },
-  list: {
-    padding: 24,
-    gap: 16,
-    paddingBottom: 100,
-  },
+  tabTextActive: { color: '#fff' },
+  listContent: { padding: Spacing.base, paddingBottom: 100 },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   emptyState: {
-    flex: 1,
-    justifyContent: 'center',
     alignItems: 'center',
-    gap: 12,
-    padding: 40,
+    justifyContent: 'center',
+    paddingVertical: 60,
+  },
+  emptyIconWrap: {
+    width: 90, height: 90, borderRadius: 45,
+    backgroundColor: Colors.surfaceAlt,
+    justifyContent: 'center', alignItems: 'center',
+    marginBottom: Spacing.md,
   },
   emptyTitle: {
-    fontSize: 20,
-    fontFamily: 'Manrope-Bold',
-    color: '#1a1a1a',
+    fontSize: Typography.lg, fontFamily: 'Manrope-Black', color: Colors.textPrimary, marginBottom: 4,
   },
   emptyDesc: {
-    fontSize: 14,
-    fontFamily: 'Manrope-Regular',
-    color: '#666',
-    textAlign: 'center',
-  },
-  exploreBtn: {
-    marginTop: 8,
-    backgroundColor: '#3e2a56',
-    borderRadius: 12,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-  },
-  exploreBtnText: {
-    color: '#fff',
-    fontFamily: 'Manrope-Bold',
-    fontSize: 14,
-  },
-  toastBar: {
-    position: 'absolute',
-    bottom: 90,
-    left: 20,
-    right: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: '#fffbeb',
-    borderWidth: 1,
-    borderColor: '#fde68a',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    elevation: 6,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-  },
-  toastText: {
-    flex: 1,
-    fontSize: 13,
-    fontFamily: 'Manrope-SemiBold',
-    color: '#92400e',
-    lineHeight: 18,
+    fontSize: Typography.base, fontFamily: 'Manrope-Medium', color: Colors.textSecondary, textAlign: 'center',
   },
 });

@@ -320,9 +320,10 @@ export default function ServiceDetailsScreen() {
           status: 'pending',
         },
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Booking request failed:', error);
-      setBookingError('Unable to send booking request.');
+      const msg = error.response?.data?.message || error.message || 'Unable to send booking request.';
+      setBookingError(msg);
     } finally {
       setBookingLoading(false);
     }

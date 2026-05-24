@@ -8,6 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '@/context/AuthContext';
 import { Colors, Typography, Spacing, Radius, Shadow } from '@/constants/Theme';
+import api from '@/lib/axiosConfig';
 
 // ── Types ──────────────────────────────────────────────────
 
@@ -100,6 +101,21 @@ export default function ProfileScreen() {
 
   const [notificationsOn, setNotificationsOn] = useState(true);
   const [locationOn,      setLocationOn]      = useState(true);
+  
+  // Technician specific state
+  const [isAvailable, setIsAvailable] = useState(user?.isAvailable ?? false);
+
+  const handleToggleAvailability = async (value: boolean) => {
+    try {
+      // Optimistic update
+      setIsAvailable(value);
+      await api.patch('/tech/availability', { isAvailable: value });
+    } catch (error) {
+      // Revert on failure
+      setIsAvailable(!value);
+      Alert.alert('Error', 'Failed to update availability. Please try again.');
+    }
+  };
 
   const handleLogout = () => {
     Alert.alert(
@@ -124,6 +140,14 @@ export default function ProfileScreen() {
     // Wallet — only visible for technicians
     ...(user?.role === 'technician'
       ? [
+          {
+            icon: 'power-settings-new',
+            label: 'Online Availability',
+            type: 'toggle' as const,
+            value: isAvailable,
+            onToggle: handleToggleAvailability,
+            sublabel: isAvailable ? 'You are accepting orders' : 'You are currently offline',
+          },
           {
             icon: 'account-balance-wallet',
             label: 'Wallet',

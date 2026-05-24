@@ -34,23 +34,25 @@ if (Platform.OS !== 'web') {
       shouldShowAlert: false,
       shouldPlaySound: false,
       shouldSetBadge: false,
+      shouldShowBanner: false,
+      shouldShowList: false,
     }),
   });
 }
 
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({
-    'Manrope-Regular':   Manrope_400Regular,
-    'Manrope-Medium':    Manrope_500Medium,
-    'Manrope-SemiBold':  Manrope_600SemiBold,
-    'Manrope-Bold':      Manrope_700Bold,
+    'Manrope-Regular': Manrope_400Regular,
+    'Manrope-Medium': Manrope_500Medium,
+    'Manrope-SemiBold': Manrope_600SemiBold,
+    'Manrope-Bold': Manrope_700Bold,
     'Manrope-ExtraBold': Manrope_800ExtraBold,
-    'Manrope-Black':     Manrope_800ExtraBold, // Closest weight for Black
+    'Manrope-Black': Manrope_800ExtraBold, // Closest weight for Black
   });
 
   const { width } = useWindowDimensions();
   const pathname = usePathname();
-  
+
   useEffect(() => {
     if (fontsLoaded) SplashScreen.hideAsync();
   }, [fontsLoaded]);
@@ -117,7 +119,7 @@ function PushNotificationBootstrap() {
 
     return () => {
       if (responseListener.current) {
-        Notifications.removeNotificationSubscription(responseListener.current);
+        responseListener.current.remove();
       }
     };
   }, [router]);
