@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet, Dimensions } from 'react-nati
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter, usePathname } from 'expo-router';
 import { Typography } from '@/constants/Theme';
+import { useAuth } from '@/context/AuthContext';
 
 const NAV_ITEMS = [
   { id: 'home', label: 'Home', icon: 'home', path: '/(tabs)/home' },
@@ -14,6 +15,7 @@ const NAV_ITEMS = [
 export default function WebSidebar() {
   const router = useRouter();
   const pathname = usePathname();
+  const { user, logout } = useAuth();
 
   // Handle active path matching
   const isActive = (itemId: string, itemPath: string) => {
@@ -66,14 +68,25 @@ export default function WebSidebar() {
       <View style={styles.footer}>
         <View style={styles.userBrief}>
           <View style={styles.avatar}>
-            <Text style={styles.avatarText}>P</Text>
+            <Text style={styles.avatarText}>
+              {user?.name ? user.name.charAt(0).toUpperCase() : 'G'}
+            </Text>
           </View>
           <View style={styles.userInfo}>
-            <Text style={styles.userName}>Pragna</Text>
-            <Text style={styles.userRole}>Premium Member</Text>
+            <Text style={styles.userName}>{user?.name || 'Guest'}</Text>
+            <Text style={styles.userRole}>
+              {user?.role === 'technician' ? 'Technician' : 'Premium Member'}
+            </Text>
           </View>
         </View>
-        <TouchableOpacity style={styles.logoutBtn} activeOpacity={0.7}>
+        <TouchableOpacity 
+          style={styles.logoutBtn} 
+          activeOpacity={0.7}
+          onPress={async () => {
+            await logout();
+            router.replace('/welcome');
+          }}
+        >
           <MaterialIcons name="logout" size={20} color="#fff" />
         </TouchableOpacity>
       </View>
