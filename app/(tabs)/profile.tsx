@@ -149,7 +149,7 @@ export default function ProfileScreen() {
   };
 
   const accountRows: SettingRow[] = [
-    { icon: 'person-outline',   label: 'Edit Profile',          type: 'chevron', onPress: () => {} },
+    { icon: 'person-outline',   label: 'Edit Profile',          type: 'chevron', onPress: () => router.push('/profile/edit') },
     // Wallet — only visible for technicians
     ...(user?.role === 'technician'
       ? [
@@ -170,9 +170,9 @@ export default function ProfileScreen() {
           },
         ]
       : []),
-    { icon: 'location-on',      label: 'Saved Addresses',       type: 'chevron', onPress: () => {} },
-    { icon: 'payment',          label: 'Payment Methods',       type: 'chevron', onPress: () => {} },
-    { icon: 'local-offer',      label: 'Coupons & Offers',      type: 'chevron', onPress: () => {} },
+    { icon: 'location-on',      label: 'Saved Addresses',       type: 'chevron', onPress: () => router.push('/profile/addresses') },
+    { icon: 'payment',          label: 'Payment Methods',       type: 'chevron', onPress: () => router.push('/profile/payment-methods') },
+    { icon: 'local-offer',      label: 'Coupons & Offers',      type: 'chevron', onPress: () => router.push('/profile/coupons') },
   ];
 
 
@@ -208,12 +208,8 @@ export default function ProfileScreen() {
     { icon: 'logout',             label: 'Sign Out',                type: 'danger',  onPress: handleLogout },
   ];
 
-  // Stats (mock — wire to backend)
-  const stats = [
-    { label: 'Bookings', value: '12' },
-    { label: 'Reviews',  value: '8' },
-    { label: 'Saved',    value: '5' },
-  ];
+
+
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -249,27 +245,9 @@ export default function ProfileScreen() {
           </View>
 
           {/* Stats row */}
-          <View style={styles.statsRow}>
-            {stats.map((stat, i) => (
-              <React.Fragment key={stat.label}>
-                <View style={styles.stat}>
-                  <Text style={styles.statValue}>{stat.value}</Text>
-                  <Text style={styles.statLabel}>{stat.label}</Text>
-                </View>
-                {i < stats.length - 1 && <View style={styles.statDivider} />}
-              </React.Fragment>
-            ))}
-          </View>
+  
         </View>
 
-        {/* ── Partner CTA banner ──────────────────── */}
-        <TouchableOpacity style={styles.partnerBanner} activeOpacity={0.88}>
-          <View style={styles.partnerBannerLeft}>
-            <Text style={styles.partnerBannerTitle}>Become a Pro Partner</Text>
-            <Text style={styles.partnerBannerSub}>Register as a service professional and grow your business.</Text>
-          </View>
-          <MaterialIcons name="arrow-forward-ios" size={16} color="#fff" />
-        </TouchableOpacity>
 
         {/* ── Settings sections ───────────────────── */}
         <Section title="Account"      rows={accountRows} />
@@ -365,30 +343,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.border,
   },
 
-  // Partner banner
-  partnerBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.primary,
-    marginHorizontal: Spacing.base,
-    marginBottom: Spacing.md,
-    borderRadius: Radius.xl,
-    padding: Spacing.base,
-    gap: 12,
-    ...Shadow.md,
-  },
-  partnerBannerLeft: { flex: 1 },
-  partnerBannerTitle: {
-    fontSize: Typography.base,
-    fontFamily: 'Manrope-Bold',
-    color: '#fff',
-    marginBottom: 2,
-  },
-  partnerBannerSub: {
-    fontSize: Typography.sm,
-    fontFamily: 'Manrope-Regular',
-    color: 'rgba(255,255,255,0.75)',
-  },
+
 
   // Sections
   section:      { marginBottom: Spacing.md },
