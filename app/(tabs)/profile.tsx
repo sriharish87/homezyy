@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
-  Switch, Image, Alert, Platform
+  Switch, Alert, Platform
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -101,7 +101,7 @@ export default function ProfileScreen() {
 
   const [notificationsOn, setNotificationsOn] = useState(true);
   const [locationOn,      setLocationOn]      = useState(true);
-  
+
   // Technician specific state
   const [isAvailable, setIsAvailable] = useState(user?.isAvailable ?? false);
 
@@ -113,7 +113,8 @@ export default function ProfileScreen() {
         await updateUser({ isAvailable: value });
       }
       await api.patch('/tech/availability', { isAvailable: value });
-    } catch (error) {
+    } catch (err) {
+      console.error('Failed to update availability:', err);
       // Revert on failure
       setIsAvailable(!value);
       if (updateUser) {
@@ -229,14 +230,16 @@ export default function ProfileScreen() {
 
           {/* Name + phone */}
           <Text style={styles.userName}>
-            {user?.name ?? 'Homezy User'}
+            {user?.name ?? 'User'}
           </Text>
-          <View style={styles.phoneRow}>
-            <MaterialIcons name="phone" size={14} color={Colors.textMuted} />
-            <Text style={styles.userPhone}>
-              +91 {user?.id ?? '98765-43210'}
-            </Text>
-          </View>
+          {user?.phone && (
+            <View style={styles.phoneRow}>
+              <MaterialIcons name="phone" size={14} color={Colors.textMuted} />
+              <Text style={styles.userPhone}>
+                {user.phone}
+              </Text>
+            </View>
+          )}
 
           {/* Verified badge */}
           <View style={styles.verifiedBadge}>
