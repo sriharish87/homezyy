@@ -18,6 +18,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import { completeUserProfile } from '@/services/authService';
 import { useAuth } from '@/context/AuthContext';
+import LocationPicker from '@/components/LocationPicker';
 import { CATEGORIES } from '@/constants/Data';
 import { Colors, Typography, Spacing, Radius, Shadow } from '@/constants/Theme';
 
@@ -223,29 +224,12 @@ export default function CompleteProfileScreen() {
                 />
               </View>
 
-              <View style={styles.inputWrapper}>
-                <MaterialIcons name="my-location" size={20} style={styles.icon} />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Latitude (e.g. 13.0827)"
-                  placeholderTextColor={Colors.textMuted}
-                  keyboardType="decimal-pad"
-                  value={lat}
-                  onChangeText={setLat}
-                />
-              </View>
-
-              <View style={styles.inputWrapper}>
-                <MaterialIcons name="explore" size={20} style={styles.icon} />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Longitude (e.g. 80.2707)"
-                  placeholderTextColor={Colors.textMuted}
-                  keyboardType="decimal-pad"
-                  value={lng}
-                  onChangeText={setLng}
-                />
-              </View>
+              <LocationPicker
+                onLocationFetched={(latitude, longitude) => {
+                  setLat(String(latitude));
+                  setLng(String(longitude));
+                }}
+              />
 
               {role === 'technician' ? (
                 <>

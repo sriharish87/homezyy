@@ -15,11 +15,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '@/context/AuthContext';
 import { Colors, Typography, Spacing, Radius, Shadow } from '@/constants/Theme';
-import * as WebBrowser from 'expo-web-browser';
-import * as Google from 'expo-auth-session/providers/google';
+import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 
-WebBrowser.maybeCompleteAuthSession();
-
+GoogleSignin.configure({
+  webClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID || '',
+});
 type Role = 'customer' | 'technician';
 
 export default function Login() {
@@ -44,64 +44,43 @@ export default function Login() {
     ]).start();
   }, []);
 
-  const googleClientId =
-    process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID || '';
-
-  const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
-    clientId: googleClientId,
-    androidClientId: googleClientId,
-    iosClientId: googleClientId,
-    webClientId: googleClientId,
-  });
-
-  React.useEffect(() => {
-    const handleGoogleResponse = async () => {
-      if (!response) return;
-
-      if (response.type !== 'success') {
-        setErrorMessage('Google sign-in cancelled');
-        return;
-      }
-
-      const idToken = response.params?.id_token;
+  const handleGoogleLogin = async () => {
+    try {
+      setIsLoading(true);
+      setErrorMessage('');
+      await GoogleSignin.hasPlayServices();
+      const userInfo = await GoogleSignin.signIn();
+      const idToken = userInfo.idToken || userInfo.data?.idToken;
 
       if (!idToken) {
         setErrorMessage('Failed to get Google idToken');
+        setIsLoading(false);
         return;
       }
 
-      try {
-        setIsLoading(true);
-        setErrorMessage('');
+      const sessionUser = await login(idToken, selectedRole);
 
-        const sessionUser = await login(idToken, selectedRole);
-
-        if (sessionUser) {
-          router.replace(
-            sessionUser.isProfileComplete
-              ? '/(tabs)/home'
-              : ('/complete-profile' as any)
-          );
-        }
-      } catch (error) {
-        console.error(error);
-        setErrorMessage('Google login failed');
-      } finally {
-        setIsLoading(false);
+      if (sessionUser) {
+        router.replace(
+          sessionUser.isProfileComplete
+            ? '/(tabs)/home'
+            : ('/complete-profile' as any)
+        );
       }
-    };
-
-    handleGoogleResponse();
-  }, [response, selectedRole, login, router]);
-
-  const handleGoogleLogin = async () => {
-    if (!googleClientId) {
-      setErrorMessage('Google Client ID is missing in .env');
-      return;
+    } catch (error: any) {
+      console.error(error);
+      if (error.code === statusCodes.SIGN_IN_CANCELLED) {
+        setErrorMessage('Google sign-in cancelled');
+      } else if (error.code === statusCodes.IN_PROGRESS) {
+        setErrorMessage('Sign in is in progress');
+      } else if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
+        setErrorMessage('Play services not available');
+      } else {
+        setErrorMessage('Google login failed');
+      }
+    } finally {
+      setIsLoading(false);
     }
-
-    setErrorMessage('');
-    await promptAsync();
   };
 
   return (
@@ -146,11 +125,10 @@ export default function Login() {
               {/* Divider */}
               <View style={styles.divider} />
 
-              {/* CTA */}
               <TouchableOpacity
-                style={[styles.submitBtn, (isLoading || !request) && styles.disabled]}
+                style={[styles.submitBtn, isLoading && styles.disabled]}
                 onPress={handleGoogleLogin}
-                disabled={isLoading || !request}
+                disabled={isLoading}
                 activeOpacity={0.85}
               >
                 {isLoading ? (

@@ -8,6 +8,7 @@ import {
   Alert,
   ActivityIndicator,
   RefreshControl,
+  Modal,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -29,6 +30,7 @@ export default function WalletScreen() {
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [withdrawing, setWithdrawing] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [walletHelpVisible, setWalletHelpVisible] = useState(false);
 
   // Guard against double withdraw
   const withdrawGuardRef = useRef(false);
@@ -193,7 +195,7 @@ export default function WalletScreen() {
 
 
         {/* ── Help section ────────────────────────────────── */}
-        <TouchableOpacity style={styles.helpCard} activeOpacity={0.88}>
+        <TouchableOpacity style={styles.helpCard} activeOpacity={0.88} onPress={() => setWalletHelpVisible(true)}>
           <View style={styles.helpLeft}>
             <MaterialIcons name="help-outline" size={20} color={Colors.primary} />
             <View>
@@ -204,6 +206,30 @@ export default function WalletScreen() {
           <MaterialIcons name="chevron-right" size={22} color={Colors.textMuted} />
         </TouchableOpacity>
       </ScrollView>
+
+      {/* Wallet Help Modal */}
+      <Modal
+        visible={walletHelpVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setWalletHelpVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalIconWrap}>
+              <MaterialIcons name="account-balance" size={32} color={Colors.primary} />
+            </View>
+            <Text style={styles.modalTitle}>Wallet Settlements</Text>
+            <Text style={styles.modalText}>
+              All your earnings and payments are processed securely. The amount will be automatically settled to your registered bank account within 48 hours of job completion.
+            </Text>
+            <TouchableOpacity style={styles.modalBtn} onPress={() => setWalletHelpVisible(false)}>
+              <Text style={styles.modalBtnText}>Understood</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
     </SafeAreaView>
   );
 }
@@ -412,4 +438,29 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     marginTop: 1,
   },
+
+  // Modal styles
+  modalOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center', alignItems: 'center', padding: Spacing.xl,
+  },
+  modalContent: {
+    backgroundColor: '#fff', borderRadius: Radius.xl,
+    padding: Spacing.xl, alignItems: 'center', width: '100%', maxWidth: 320,
+    ...Shadow.md,
+  },
+  modalIconWrap: {
+    width: 64, height: 64, borderRadius: 32, backgroundColor: Colors.primaryLight,
+    justifyContent: 'center', alignItems: 'center', marginBottom: Spacing.lg,
+  },
+  modalTitle: { fontSize: 18, fontFamily: 'Manrope-Black', color: Colors.textPrimary, marginBottom: 12 },
+  modalText: {
+    fontSize: 14, fontFamily: 'Manrope-Medium', color: Colors.textSecondary,
+    textAlign: 'center', lineHeight: 22, marginBottom: 24,
+  },
+  modalBtn: {
+    backgroundColor: Colors.primary, width: '100%', paddingVertical: 14,
+    borderRadius: Radius.lg, alignItems: 'center',
+  },
+  modalBtnText: { fontSize: 15, fontFamily: 'Manrope-Bold', color: '#fff' },
 });

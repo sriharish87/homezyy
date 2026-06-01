@@ -1,8 +1,9 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  FlatList, Image, ActivityIndicator, Dimensions, Animated, Easing
+  FlatList, ActivityIndicator, Dimensions, Animated, Easing
 } from 'react-native';
+import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -38,29 +39,21 @@ interface ServiceCardProps {
 }
 
 function ServiceCard({ service, isFavorited, onFavorite, onViewDetails }: ServiceCardProps) {
-  const [imgLoaded, setImgLoaded] = useState(false);
-  const [imgError, setImgError] = useState(false);
-
-  const fallback = 'https://images.unsplash.com/photo-1581578731548-c64695ce2958?w=800&q=80';
-
   return (
     <View style={card.container}>
       {/* Image with skeleton */}
-      <View style={[card.imgWrapper, !imgLoaded && card.skeleton]}>
+      <View style={[card.imgWrapper, card.skeleton]}>
         <Image
-          source={{ uri: imgError ? fallback : service.img }}
-          style={[card.img, imgLoaded ? card.imgVisible : card.imgHidden]}
-          onLoad={() => setImgLoaded(true)}
-          onError={() => { setImgError(true); setImgLoaded(true); }}
-          resizeMode="cover"
+          source={{ uri: service.img }}
+          style={card.img}
+          contentFit="cover"
+          transition={300}
         />
         {/* Rating badge */}
-        {imgLoaded && (
-          <View style={card.ratingBadge}>
-            <MaterialIcons name="star" size={12} color={Colors.star} />
-            <Text style={card.ratingText}>{service.rating}</Text>
-          </View>
-        )}
+        <View style={card.ratingBadge}>
+          <MaterialIcons name="star" size={12} color={Colors.star} />
+          <Text style={card.ratingText}>{service.rating}</Text>
+        </View>
       </View>
 
       {/* Card body */}

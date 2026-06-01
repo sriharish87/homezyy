@@ -1,124 +1,92 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
-  Switch, Image, Alert, Platform
+  Switch, Alert, Platform, Modal
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '@/context/AuthContext';
 import { Colors, Typography, Spacing, Radius, Shadow } from '@/constants/Theme';
 import api from '@/lib/axiosConfig';
 
-// ── Types ──────────────────────────────────────────────────
-
-interface SettingRow {
-  icon: string;
-  label: string;
-  type: 'chevron' | 'toggle' | 'danger';
-  onPress?: () => void;
-  value?: boolean;
-  onToggle?: (v: boolean) => void;
-  sublabel?: string;
-}
-
-// ── Setting row component ──────────────────────────────────
-
-function SettingItem({ row }: { row: SettingRow }) {
-  return (
-    <TouchableOpacity
-      style={[styles.settingRow, row.type === 'danger' && styles.settingRowDanger]}
-      onPress={row.type !== 'toggle' ? row.onPress : undefined}
-      activeOpacity={row.type === 'toggle' ? 1 : 0.7}
-    >
-      <View
-        style={[
-          styles.settingIcon,
-          row.type === 'danger'
-            ? { backgroundColor: '#fee2e2' }
-            : { backgroundColor: Colors.primaryLight },
-        ]}
-      >
-        <MaterialIcons
-          name={row.icon as any}
-          size={20}
-          color={row.type === 'danger' ? Colors.error : Colors.primary}
-        />
-      </View>
-
-      <View style={styles.settingLabel}>
-        <Text
-          style={[
-            styles.settingLabelText,
-            row.type === 'danger' && { color: Colors.error },
-          ]}
-        >
-          {row.label}
-        </Text>
-        {row.sublabel && (
-          <Text style={styles.settingSubLabel}>{row.sublabel}</Text>
-        )}
-      </View>
-
-      {row.type === 'chevron' && (
-        <MaterialIcons name="chevron-right" size={22} color={Colors.textMuted} />
-      )}
-      {row.type === 'toggle' && (
-        <Switch
-          value={row.value}
-          onValueChange={row.onToggle}
-          trackColor={{ false: Colors.border, true: Colors.primary + 'AA' }}
-          thumbColor={row.value ? Colors.primary : '#fff'}
-        />
-      )}
-    </TouchableOpacity>
-  );
-}
-
-// ── Section wrapper ────────────────────────────────────────
-
-function Section({ title, rows }: { title: string; rows: SettingRow[] }) {
-  return (
-    <View style={styles.section}>
-      <Text style={styles.sectionTitle}>{title}</Text>
-      <View style={styles.sectionCard}>
-        {rows.map((row, i) => (
-          <React.Fragment key={row.label}>
-            <SettingItem row={row} />
-            {i < rows.length - 1 && <View style={styles.separator} />}
-          </React.Fragment>
-        ))}
-      </View>
-    </View>
-  );
-}
-
-// ── Main screen ────────────────────────────────────────────
-
 export default function ProfileScreen() {
   const router = useRouter();
   const { user, logout, updateUser } = useAuth();
-
-  const [notificationsOn, setNotificationsOn] = useState(true);
-  const [locationOn,      setLocationOn]      = useState(true);
   
-  // Technician specific state
+  const isTech = user?.role === 'technician';
+
+  // Toggle State
   const [isAvailable, setIsAvailable] = useState(user?.isAvailable ?? false);
+
+
+  // Stats state for Tech
+  const [stats, setStats] = useState({
+    totalOrders: 0,
+    rating: 0,
+    ratingCount: 0
+  });
+
+  // Stats state for Customer
+  const [customerStats, setCustomerStats] = useState({
+    upcomingOrders: 0,
+    totalOrders: 0,
+    ratingCount: 0
+  });
+
+  const [supportVisible, setSupportVisible] = useState(false);
+
+  // Sync state when context changes
+  useEffect(() => {
+    setIsAvailable(user?.isAvailable ?? false);
+  }, [user?.isAvailable]);
+
+  // Fetch Stats dynamically
+  useFocusEffect(
+    React.useCallback(() => {
+      if (isTech) {
+        api.get('/tech/profile')
+          .then((res) => {
+            setStats({
+              totalOrders: res.data.totalOrdersCompleted || 0,
+              rating: res.data.rating || 0,
+              ratingCount: res.data.numberOfRatings || 0,
+            });
+            // Ensure availability is strictly synced with DB
+            if (res.data.isAvailable !== undefined) {
+              updateUser({ isAvailable: res.data.isAvailable });
+            }
+          })
+          .catch((err) => console.log('Failed to fetch tech profile', err));
+      } else {
+        api.get('/user/profile')
+          .then((res) => {
+            setCustomerStats({
+              upcomingOrders: res.data.upcomingOrders || 0,
+              totalOrders: res.data.totalOrdersCompleted || 0,
+              ratingCount: res.data.numberOfRatingsGiven || 0,
+            });
+          })
+          .catch((err) => console.log('Failed to fetch user profile', err));
+      }
+    }, [isTech])
+  );
 
   const handleToggleAvailability = async (value: boolean) => {
     try {
-      // Optimistic update
+      // Optimistic update UI
       setIsAvailable(value);
+      
+      // Update backend first
+      await api.patch('/tech/availability', { isAvailable: value });
+      
+      // If success, update auth context so it persists
       if (updateUser) {
         await updateUser({ isAvailable: value });
       }
-      await api.patch('/tech/availability', { isAvailable: value });
     } catch (error) {
       // Revert on failure
       setIsAvailable(!value);
-      if (updateUser) {
-        await updateUser({ isAvailable: !value });
-      }
       Alert.alert('Error', 'Failed to update availability. Please try again.');
     }
   };
@@ -148,137 +116,173 @@ export default function ProfileScreen() {
     }
   };
 
-  const accountRows: SettingRow[] = [
-    { icon: 'person-outline',   label: 'Edit Profile',          type: 'chevron', onPress: () => {} },
-    // Wallet — only visible for technicians
-    ...(user?.role === 'technician'
-      ? [
-          {
-            icon: 'power-settings-new',
-            label: 'Online Availability',
-            type: 'toggle' as const,
-            value: isAvailable,
-            onToggle: handleToggleAvailability,
-            sublabel: isAvailable ? 'You are accepting orders' : 'You are currently offline',
-          },
-          {
-            icon: 'account-balance-wallet',
-            label: 'Wallet',
-            type: 'chevron' as const,
-            sublabel: 'View earnings & withdraw',
-            onPress: () => router.push('/wallet'),
-          },
-        ]
-      : []),
-    { icon: 'location-on',      label: 'Saved Addresses',       type: 'chevron', onPress: () => {} },
-    { icon: 'payment',          label: 'Payment Methods',       type: 'chevron', onPress: () => {} },
-    { icon: 'local-offer',      label: 'Coupons & Offers',      type: 'chevron', onPress: () => {} },
-  ];
-
-
-  const preferenceRows: SettingRow[] = [
-    {
-      icon: 'notifications',
-      label: 'Push Notifications',
-      type: 'toggle',
-      value: notificationsOn,
-      onToggle: setNotificationsOn,
-      sublabel: 'Booking updates, offers & reminders',
-    },
-    {
-      icon: 'my-location',
-      label: 'Location Access',
-      type: 'toggle',
-      value: locationOn,
-      onToggle: setLocationOn,
-      sublabel: 'Used to find nearby professionals',
-    },
-  ];
-
-  const supportRows: SettingRow[] = [
-    { icon: 'help-outline',       label: 'Help Center',             type: 'chevron', onPress: () => {} },
-    { icon: 'chat-bubble-outline',label: 'Chat with Support',       type: 'chevron', onPress: () => {} },
-    { icon: 'star-outline',       label: 'Rate Homezy',             type: 'chevron', onPress: () => {} },
-    { icon: 'info-outline',       label: 'About Homezy',            type: 'chevron', onPress: () => {} },
-    { icon: 'policy',             label: 'Privacy Policy',          type: 'chevron', onPress: () => {} },
-    { icon: 'description',        label: 'Terms & Conditions',      type: 'chevron', onPress: () => {} },
-  ];
-
-  const dangerRows: SettingRow[] = [
-    { icon: 'logout',             label: 'Sign Out',                type: 'danger',  onPress: handleLogout },
-  ];
-
-  // Stats (mock — wire to backend)
-  const stats = [
-    { label: 'Bookings', value: '12' },
-    { label: 'Reviews',  value: '8' },
-    { label: 'Saved',    value: '5' },
-  ];
-
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
 
-        {/* ── Profile header card ─────────────────── */}
-        <View style={styles.profileCard}>
-          {/* Avatar */}
+        {/* ── Profile Header ─────────────────── */}
+        <View style={styles.profileHeader}>
+          <View style={styles.headerInfo}>
+            <Text style={styles.userName}>{user?.name ?? 'Homezy User'}</Text>
+            <View style={styles.phoneRow}>
+              <MaterialIcons name="phone" size={14} color={Colors.textMuted} />
+              <Text style={styles.userPhone}>{user?.phone ?? 'Not provided'}</Text>
+            </View>
+            <View style={styles.roleBadge}>
+              <MaterialIcons name="verified" size={12} color={Colors.primary} />
+              <Text style={styles.roleText}>{isTech ? 'Homezy Pro' : 'Customer'}</Text>
+            </View>
+          </View>
           <View style={styles.avatarWrap}>
             <View style={styles.avatar}>
               <MaterialIcons name="person" size={40} color={Colors.primary} />
             </View>
-            <TouchableOpacity style={styles.editAvatarBtn}>
-              <MaterialIcons name="camera-alt" size={14} color="#fff" />
-            </TouchableOpacity>
-          </View>
-
-          {/* Name + phone */}
-          <Text style={styles.userName}>
-            {user?.name ?? 'Homezy User'}
-          </Text>
-          <View style={styles.phoneRow}>
-            <MaterialIcons name="phone" size={14} color={Colors.textMuted} />
-            <Text style={styles.userPhone}>
-              +91 {user?.id ?? '98765-43210'}
-            </Text>
-          </View>
-
-          {/* Verified badge */}
-          <View style={styles.verifiedBadge}>
-            <MaterialIcons name="verified" size={14} color={Colors.primary} />
-            <Text style={styles.verifiedText}>Verified Account</Text>
-          </View>
-
-          {/* Stats row */}
-          <View style={styles.statsRow}>
-            {stats.map((stat, i) => (
-              <React.Fragment key={stat.label}>
-                <View style={styles.stat}>
-                  <Text style={styles.statValue}>{stat.value}</Text>
-                  <Text style={styles.statLabel}>{stat.label}</Text>
-                </View>
-                {i < stats.length - 1 && <View style={styles.statDivider} />}
-              </React.Fragment>
-            ))}
           </View>
         </View>
 
-        {/* ── Partner CTA banner ──────────────────── */}
-        <TouchableOpacity style={styles.partnerBanner} activeOpacity={0.88}>
-          <View style={styles.partnerBannerLeft}>
-            <Text style={styles.partnerBannerTitle}>Become a Pro Partner</Text>
-            <Text style={styles.partnerBannerSub}>Register as a service professional and grow your business.</Text>
+        {/* ── Dynamic Stats for Tech ─────────────────── */}
+        {isTech ? (
+          <View style={styles.statsContainer}>
+            <View style={styles.statBox}>
+              <Text style={styles.statValue}>{stats.totalOrders}</Text>
+              <Text style={styles.statLabel}>Jobs Done</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statBox}>
+              <Text style={styles.statValue}>{stats.rating.toFixed(1)} <MaterialIcons name="star" size={16} color="#fbbf24" /></Text>
+              <Text style={styles.statLabel}>Avg Rating</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statBox}>
+              <Text style={styles.statValue}>{stats.ratingCount}</Text>
+              <Text style={styles.statLabel}>Reviews</Text>
+            </View>
           </View>
-          <MaterialIcons name="arrow-forward-ios" size={16} color="#fff" />
-        </TouchableOpacity>
+        ) : (
+          <View style={styles.statsContainer}>
+            <View style={styles.statBox}>
+              <Text style={styles.statValue}>{customerStats.upcomingOrders}</Text>
+              <Text style={styles.statLabel}>Upcoming</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statBox}>
+              <Text style={styles.statValue}>{customerStats.totalOrders}</Text>
+              <Text style={styles.statLabel}>Total Jobs</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statBox}>
+              <Text style={styles.statValue}>{customerStats.ratingCount}</Text>
+              <Text style={styles.statLabel}>Reviews Given</Text>
+            </View>
+          </View>
+        )}
 
-        {/* ── Settings sections ───────────────────── */}
-        <Section title="Account"      rows={accountRows} />
-        <Section title="Preferences"  rows={preferenceRows} />
-        <Section title="Support"      rows={supportRows} />
-        <Section title=""             rows={dangerRows} />
+        {/* ── Menu Actions ───────────────────── */}
+        <View style={styles.sectionCard}>
+          <TouchableOpacity style={styles.menuRow} onPress={() => router.push('/edit-profile')}>
+            <View style={styles.iconBox}><MaterialIcons name="person-outline" size={22} color={Colors.primary} /></View>
+            <View style={styles.menuTextWrap}>
+              <Text style={styles.menuTitle}>Edit Profile</Text>
+              <Text style={styles.menuSub}>Update your name, phone & details</Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={24} color={Colors.textMuted} />
+          </TouchableOpacity>
+          
+          <View style={styles.separator} />
 
-        <Text style={styles.versionText}>Homezy v1.0.0 · Made with ♥ in India</Text>
+          <TouchableOpacity style={styles.menuRow} onPress={() => setSupportVisible(true)}>
+            <View style={[styles.iconBox, { backgroundColor: '#f3e8ff' }]}><MaterialIcons name="support-agent" size={22} color="#9333ea" /></View>
+            <View style={styles.menuTextWrap}>
+              <Text style={styles.menuTitle}>Help & Support</Text>
+              <Text style={styles.menuSub}>Contact us for queries or issues</Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={24} color={Colors.textMuted} />
+          </TouchableOpacity>
+          
+          <View style={styles.separator} />
+
+          <TouchableOpacity style={styles.menuRow} onPress={() => router.push('/payments')}>
+            <View style={[styles.iconBox, { backgroundColor: '#dcfce7' }]}><MaterialIcons name="history" size={22} color="#16a34a" /></View>
+            <View style={styles.menuTextWrap}>
+              <Text style={styles.menuTitle}>Payment History</Text>
+              <Text style={styles.menuSub}>View your past transactions</Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={24} color={Colors.textMuted} />
+          </TouchableOpacity>
+          
+          <View style={styles.separator} />
+
+          {isTech && (
+            <>
+              <View style={styles.menuRow}>
+                <View style={styles.iconBox}><MaterialIcons name="power-settings-new" size={22} color={Colors.primary} /></View>
+                <View style={styles.menuTextWrap}>
+                  <Text style={styles.menuTitle}>Online Availability</Text>
+                  <Text style={styles.menuSub}>{isAvailable ? 'You are accepting orders' : 'You are currently offline'}</Text>
+                </View>
+                <Switch
+                  value={isAvailable}
+                  onValueChange={handleToggleAvailability}
+                  trackColor={{ false: Colors.border, true: Colors.primary + 'AA' }}
+                  thumbColor={isAvailable ? Colors.primary : '#fff'}
+                />
+              </View>
+              
+              <View style={styles.separator} />
+              
+              <TouchableOpacity style={styles.menuRow} onPress={() => router.push('/wallet')}>
+                <View style={styles.iconBox}><MaterialIcons name="account-balance-wallet" size={22} color={Colors.primary} /></View>
+                <View style={styles.menuTextWrap}>
+                  <Text style={styles.menuTitle}>My Wallet</Text>
+                  <Text style={styles.menuSub}>View earnings and settlements</Text>
+                </View>
+                <MaterialIcons name="chevron-right" size={24} color={Colors.textMuted} />
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
+
+        <View style={styles.sectionCard}>
+          <TouchableOpacity style={styles.menuRow} onPress={handleLogout}>
+            <View style={[styles.iconBox, { backgroundColor: '#fee2e2' }]}><MaterialIcons name="logout" size={22} color="#dc2626" /></View>
+            <View style={styles.menuTextWrap}>
+              <Text style={[styles.menuTitle, { color: '#dc2626' }]}>Sign Out</Text>
+              <Text style={styles.menuSub}>Log out of your account</Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+
+        <Text style={styles.versionText}>Homezy v1.0.0 · Designed for you</Text>
+
       </ScrollView>
+
+      {/* Support Modal */}
+      <Modal
+        visible={supportVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSupportVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={[styles.modalIconWrap, { backgroundColor: '#f3e8ff' }]}>
+              <MaterialIcons name="headset-mic" size={32} color="#9333ea" />
+            </View>
+            <Text style={styles.modalTitle}>Help & Support</Text>
+            <Text style={styles.modalText}>
+              We are here to help! If you have any questions, face any issues with your bookings, or need assistance, please feel free to reach out to our dedicated support team.
+            </Text>
+            <View style={styles.contactWrap}>
+              <MaterialIcons name="email" size={20} color={Colors.textSecondary} />
+              <Text style={styles.contactEmail}>fixi.helpdesk@gmail.com</Text>
+            </View>
+            <TouchableOpacity style={styles.modalBtn} onPress={() => setSupportVisible(false)}>
+              <Text style={styles.modalBtnText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
     </SafeAreaView>
   );
 }
@@ -287,169 +291,109 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: Colors.background },
   scroll:   { paddingBottom: 100 },
 
-  // Profile card
-  profileCard: {
+  // Header
+  profileHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: Spacing.xl,
     backgroundColor: Colors.surface,
-    marginBottom: Spacing.md,
-    paddingHorizontal: Spacing.base,
-    paddingVertical: Spacing.xl,
-    alignItems: 'center',
     borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    borderBottomColor: Colors.borderLight,
+    marginBottom: Spacing.lg,
   },
-  avatarWrap:    { position: 'relative', marginBottom: Spacing.md },
+  headerInfo: { flex: 1 },
+  userName: { fontSize: 24, fontFamily: 'Manrope-Black', color: Colors.textPrimary, marginBottom: 4 },
+  phoneRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
+  userPhone: { fontSize: 14, fontFamily: 'Manrope-Medium', color: Colors.textSecondary },
+  roleBadge: {
+    alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: Colors.primaryLight, paddingHorizontal: 8, paddingVertical: 4, borderRadius: Radius.sm
+  },
+  roleText: { fontSize: 12, fontFamily: 'Manrope-Bold', color: Colors.primary },
+  
+  avatarWrap: { marginLeft: 16 },
   avatar: {
-    width: 90, height: 90, borderRadius: 45,
+    width: 72, height: 72, borderRadius: 36,
     backgroundColor: Colors.primaryLight,
     justifyContent: 'center', alignItems: 'center',
-    borderWidth: 3,
-    borderColor: Colors.primary + '33',
-  },
-  editAvatarBtn: {
-    position: 'absolute', bottom: 0, right: 0,
-    width: 28, height: 28, borderRadius: 14,
-    backgroundColor: Colors.primary,
-    justifyContent: 'center', alignItems: 'center',
-    borderWidth: 2, borderColor: Colors.surface,
-  },
-  userName: {
-    fontSize: Typography.xl,
-    fontFamily: 'Manrope-Black',
-    color: Colors.textPrimary,
-    marginBottom: 4,
-  },
-  phoneRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    marginBottom: Spacing.sm,
-  },
-  userPhone: {
-    fontSize: Typography.sm,
-    fontFamily: 'Manrope-Medium',
-    color: Colors.textSecondary,
-  },
-  verifiedBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: Colors.primaryLight,
-    paddingHorizontal: 10, paddingVertical: 4,
-    borderRadius: Radius.full,
-    marginBottom: Spacing.xl,
-  },
-  verifiedText: {
-    fontSize: Typography.xs,
-    fontFamily: 'Manrope-Bold',
-    color: Colors.primary,
-  },
-  statsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    width: '100%',
-    backgroundColor: Colors.surfaceAlt,
-    borderRadius: Radius.xl,
-    paddingVertical: Spacing.base,
-  },
-  stat: { flex: 1, alignItems: 'center' },
-  statValue: {
-    fontSize: Typography.xl,
-    fontFamily: 'Manrope-Black',
-    color: Colors.primary,
-    marginBottom: 2,
-  },
-  statLabel: {
-    fontSize: Typography.xs,
-    fontFamily: 'Manrope-Medium',
-    color: Colors.textSecondary,
-  },
-  statDivider: {
-    width: 1,
-    height: 36,
-    backgroundColor: Colors.border,
+    borderWidth: 2, borderColor: Colors.primary + '33',
   },
 
-  // Partner banner
-  partnerBanner: {
+  // Stats
+  statsContainer: {
     flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.primary,
+    backgroundColor: Colors.surface,
     marginHorizontal: Spacing.base,
-    marginBottom: Spacing.md,
+    marginBottom: Spacing.lg,
     borderRadius: Radius.xl,
-    padding: Spacing.base,
-    gap: 12,
-    ...Shadow.md,
+    paddingVertical: Spacing.lg,
+    borderWidth: 1, borderColor: Colors.borderLight,
+    ...Shadow.sm,
   },
-  partnerBannerLeft: { flex: 1 },
-  partnerBannerTitle: {
-    fontSize: Typography.base,
-    fontFamily: 'Manrope-Bold',
-    color: '#fff',
-    marginBottom: 2,
-  },
-  partnerBannerSub: {
-    fontSize: Typography.sm,
-    fontFamily: 'Manrope-Regular',
-    color: 'rgba(255,255,255,0.75)',
-  },
+  statBox: { flex: 1, alignItems: 'center' },
+  statValue: { fontSize: 22, fontFamily: 'Manrope-Black', color: Colors.primary, marginBottom: 4 },
+  statLabel: { fontSize: 13, fontFamily: 'Manrope-Medium', color: Colors.textSecondary },
+  statDivider: { width: 1, backgroundColor: Colors.borderLight, marginVertical: 8 },
 
-  // Sections
-  section:      { marginBottom: Spacing.md },
-  sectionTitle: {
-    fontSize: Typography.xs,
-    fontFamily: 'Manrope-Bold',
-    color: Colors.textMuted,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    paddingHorizontal: Spacing.base,
-    paddingBottom: Spacing.sm,
-  },
+  // Menu
   sectionCard: {
     backgroundColor: Colors.surface,
     marginHorizontal: Spacing.base,
     borderRadius: Radius.xl,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
+    marginBottom: Spacing.md,
+    borderWidth: 1, borderColor: Colors.borderLight,
     ...Shadow.sm,
   },
-
-  // Setting rows
-  settingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.base,
-    paddingVertical: Spacing.md,
-    gap: 12,
+  menuRow: {
+    flexDirection: 'row', alignItems: 'center',
+    padding: Spacing.base, gap: 12,
   },
-  settingRowDanger: {},
-  settingIcon: {
-    width: 38, height: 38,
-    borderRadius: Radius.md,
-    justifyContent: 'center',
-    alignItems: 'center',
+  iconBox: {
+    width: 40, height: 40, borderRadius: Radius.md,
+    backgroundColor: Colors.primaryLight,
+    justifyContent: 'center', alignItems: 'center',
   },
-  settingLabel: { flex: 1 },
-  settingLabelText: {
-    fontSize: Typography.base,
-    fontFamily: 'Manrope-SemiBold',
-    color: Colors.textPrimary,
-  },
-  settingSubLabel: {
-    fontSize: Typography.xs,
-    fontFamily: 'Manrope-Regular',
-    color: Colors.textMuted,
-    marginTop: 2,
-  },
-  separator: {
-    height: 1,
-    backgroundColor: Colors.borderLight,
-    marginLeft: 62,
-  },
+  menuTextWrap: { flex: 1 },
+  menuTitle: { fontSize: 16, fontFamily: 'Manrope-Bold', color: Colors.textPrimary },
+  menuSub: { fontSize: 13, fontFamily: 'Manrope-Regular', color: Colors.textMuted, marginTop: 2 },
+  separator: { height: 1, backgroundColor: Colors.borderLight, marginLeft: 68 },
 
   versionText: {
-    fontSize: Typography.xs,
-    fontFamily: 'Manrope-Regular',
-    color: Colors.textMuted,
-    textAlign: 'center',
-    marginTop: Spacing.base,
-    paddingBottom: Spacing.xl,
+    fontSize: 12, fontFamily: 'Manrope-Regular', color: Colors.textMuted,
+    textAlign: 'center', marginTop: Spacing.xl,
   },
+
+  // Modal
+  modalOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center', alignItems: 'center', padding: Spacing.xl,
+  },
+  modalContent: {
+    backgroundColor: '#fff', borderRadius: Radius.xl,
+    padding: Spacing.xl, alignItems: 'center', width: '100%', maxWidth: 320,
+    ...Shadow.md,
+  },
+  modalIconWrap: {
+    width: 64, height: 64, borderRadius: 32, backgroundColor: Colors.primaryLight,
+    justifyContent: 'center', alignItems: 'center', marginBottom: Spacing.lg,
+  },
+  modalTitle: { fontSize: 18, fontFamily: 'Manrope-Black', color: Colors.textPrimary, marginBottom: 12 },
+  modalText: {
+    fontSize: 14, fontFamily: 'Manrope-Medium', color: Colors.textSecondary,
+    textAlign: 'center', lineHeight: 22, marginBottom: 24,
+  },
+  contactWrap: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.background,
+    paddingHorizontal: Spacing.md, paddingVertical: 10, borderRadius: Radius.md,
+    marginBottom: 24, gap: 8
+  },
+  contactEmail: {
+    fontSize: 14, fontFamily: 'Manrope-SemiBold', color: Colors.textPrimary
+  },
+  modalBtn: {
+    backgroundColor: Colors.primary, width: '100%', paddingVertical: 14,
+    borderRadius: Radius.lg, alignItems: 'center',
+  },
+  modalBtnText: { fontSize: 15, fontFamily: 'Manrope-Bold', color: '#fff' },
 });
