@@ -10,7 +10,6 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '@/context/AuthContext';
 import { Colors, Typography, Spacing, Radius, Shadow } from '@/constants/Theme';
 import { POPULAR_SERVICES } from '@/constants/Data';
-import { useAuth } from '@/context/AuthContext';
 import api from '@/lib/axiosConfig';
 
 const { width: SCREEN_W } = Dimensions.get('window');
@@ -282,7 +281,6 @@ const ps = StyleSheet.create({
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { user } = useAuth();
   const { user } = useAuth();
   const { width } = useWindowDimensions();
   const isDesktop = width >= 1024;
