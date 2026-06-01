@@ -13,7 +13,7 @@ import api from '@/lib/axiosConfig';
 export default function ProfileScreen() {
   const router = useRouter();
   const { user, logout, updateUser } = useAuth();
-  
+
   const isTech = user?.role === 'technician';
 
   // Toggle State
@@ -76,10 +76,10 @@ export default function ProfileScreen() {
     try {
       // Optimistic update UI
       setIsAvailable(value);
-      
+
       // Update backend first
       await api.patch('/tech/availability', { isAvailable: value });
-      
+
       // If success, update auth context so it persists
       if (updateUser) {
         await updateUser({ isAvailable: value });
@@ -187,7 +187,7 @@ export default function ProfileScreen() {
             </View>
             <MaterialIcons name="chevron-right" size={24} color={Colors.textMuted} />
           </TouchableOpacity>
-          
+
           <View style={styles.separator} />
 
           <TouchableOpacity style={styles.menuRow} onPress={() => setSupportVisible(true)}>
@@ -198,7 +198,7 @@ export default function ProfileScreen() {
             </View>
             <MaterialIcons name="chevron-right" size={24} color={Colors.textMuted} />
           </TouchableOpacity>
-          
+
           <View style={styles.separator} />
 
           <TouchableOpacity style={styles.menuRow} onPress={() => router.push('/payments')}>
@@ -209,7 +209,7 @@ export default function ProfileScreen() {
             </View>
             <MaterialIcons name="chevron-right" size={24} color={Colors.textMuted} />
           </TouchableOpacity>
-          
+
           <View style={styles.separator} />
 
           {isTech && (
@@ -227,9 +227,9 @@ export default function ProfileScreen() {
                   thumbColor={isAvailable ? Colors.primary : '#fff'}
                 />
               </View>
-              
+
               <View style={styles.separator} />
-              
+
               <TouchableOpacity style={styles.menuRow} onPress={() => router.push('/wallet')}>
                 <View style={styles.iconBox}><MaterialIcons name="account-balance-wallet" size={22} color={Colors.primary} /></View>
                 <View style={styles.menuTextWrap}>
@@ -289,7 +289,7 @@ export default function ProfileScreen() {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: Colors.background },
-  scroll:   { paddingBottom: 100 },
+  scroll: { paddingBottom: 100 },
 
   // Header
   profileHeader: {
@@ -311,7 +311,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primaryLight, paddingHorizontal: 8, paddingVertical: 4, borderRadius: Radius.sm
   },
   roleText: { fontSize: 12, fontFamily: 'Manrope-Bold', color: Colors.primary },
-  
+
   avatarWrap: { marginLeft: 16 },
   avatar: {
     width: 72, height: 72, borderRadius: 36,
