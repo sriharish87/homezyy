@@ -201,17 +201,43 @@ export default function ServiceDetailsScreen() {
     : '5 yrs exp.';
   const ratingValue = technician?.rating ?? service.rating;
 
-  const timeSlots = useMemo(
-    () => [
+  const timeSlots = useMemo(() => {
+    const allSlots = [
       '09:00 AM - 10:00 AM',
       '10:30 AM - 11:30 AM',
       '12:00 PM - 01:00 PM',
       '02:00 PM - 03:00 PM',
       '04:00 PM - 05:00 PM',
       '06:00 PM - 07:00 PM',
-    ],
-    []
-  );
+    ];
+
+    if (!selectedDate) return allSlots;
+
+    const now = new Date();
+    // Check if selectedDate is today
+    if (selectedDate.toDateString() === now.toDateString()) {
+      const currentHour = now.getHours();
+      const currentMinutes = now.getMinutes();
+
+      return allSlots.filter((slot) => {
+        const startTimeStr = slot.split('-')[0].trim();
+        const [time, period] = startTimeStr.split(' ');
+        const [hourStr, minStr] = time.split(':');
+
+        let startHour = parseInt(hourStr, 10);
+        const startMin = parseInt(minStr, 10);
+
+        if (period === 'PM' && startHour < 12) startHour += 12;
+        if (period === 'AM' && startHour === 12) startHour = 0;
+
+        if (startHour > currentHour) return true;
+        if (startHour === currentHour && startMin > currentMinutes) return true;
+        return false;
+      });
+    }
+
+    return allSlots;
+  }, [selectedDate]);
 
   const dateOptions = useMemo(() => {
     const list: Date[] = [];

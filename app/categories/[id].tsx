@@ -10,6 +10,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, Radius, Shadow } from '@/constants/Theme';
 import { ALL_SUBSERVICES, CATEGORIES, type SubService, type Category } from '@/constants/Data';
 import LoadingScreen from '@/components/ui/LoadingScreen';
+import api from '@/lib/axiosConfig';
 
 // Used directly in stylesheet
 
@@ -32,13 +33,41 @@ function TabPill({ label, active, onPress }: { label: string; active: boolean; o
 // ── Service card ───────────────────────────────────────────
 
 interface ServiceCardProps {
+  category: string;
   service: SubService;
   isFavorited: boolean;
   onFavorite: () => void;
   onViewDetails: (service: SubService) => void;
 }
 
-function ServiceCard({ service, isFavorited, onFavorite, onViewDetails }: ServiceCardProps) {
+function ServiceCard({ category, service, isFavorited, onFavorite, onViewDetails }: ServiceCardProps) {
+  const [livePrice, setLivePrice] = useState<string>(service.price);
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchPrice = async () => {
+      try {
+        const serviceParam = encodeURIComponent(category);
+        const subserviceParam = encodeURIComponent(service.title);
+        const response = await api.get(`/pricing/${serviceParam}/${subserviceParam}`);
+        if (!isMounted) return;
+        
+        const payload = response?.data?.data ?? response?.data ?? {};
+        if (payload?.priceMid) {
+          setLivePrice(`₹${payload.priceMid}`);
+        } else if (payload?.price) {
+          setLivePrice(`₹${payload.price}`);
+        }
+      } catch (err) {
+        console.log('Failed to fetch price for', service.title);
+      }
+    };
+    if (category && service.title) {
+      fetchPrice();
+    }
+    return () => { isMounted = false; };
+  }, [category, service.title]);
+
   return (
     <View style={card.container}>
       {/* Image with skeleton */}
@@ -60,7 +89,7 @@ function ServiceCard({ service, isFavorited, onFavorite, onViewDetails }: Servic
       <View style={card.body}>
         <Text style={card.title} numberOfLines={1}>{service.title}</Text>
         <Text style={card.meta} numberOfLines={1}>{service.reviews} reviews • {service.duration}</Text>
-        <Text style={card.price}>{service.price}</Text>
+        <Text style={card.price}>{livePrice}</Text>
 
         <View style={card.actions}>
           <TouchableOpacity style={card.viewBtn} onPress={() => onViewDetails(service)} activeOpacity={0.85}>
@@ -353,6 +382,7 @@ export default function SubServicesScreen() {
           showsVerticalScrollIndicator={false}
           renderItem={({ item }) => (
             <ServiceCard
+              category={category}
               service={item}
               isFavorited={favorites.has(item.title)}
               onFavorite={() => toggleFav(item.title)}

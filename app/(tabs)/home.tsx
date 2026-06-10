@@ -286,6 +286,7 @@ export default function HomeScreen() {
   const isDesktop = width >= 1024;
 
   const isCustomer = user?.role === 'customer';
+  const isTechnician = user?.role === 'technician';
   const userName = user?.name?.split(' ')[0] || 'Guest';
   const userAvatar = user?.profilePic;
 
@@ -336,7 +337,7 @@ export default function HomeScreen() {
           />
         </View>
 
-        <PopularServicesSection onNavigate={navigateToCategory} />
+        {!isTechnician && <PopularServicesSection onNavigate={navigateToCategory} />}
 
       </ScrollView>
     </SafeAreaView>

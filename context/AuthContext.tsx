@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { loginWithGoogleToken } from '@/services/authService';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import api from '@/lib/axiosConfig';
 
 // ── Storage keys ───────────────────────────────────────────
@@ -186,6 +187,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = async () => {
     try {
       setAuthLoading(true);
+
+      // Sign out from Google to ensure the account prompt appears next time
+      try {
+        await GoogleSignin.signOut();
+      } catch (googleErr) {
+        console.warn('Google sign out error:', googleErr);
+      }
 
       await AsyncStorage.multiRemove([
         STORAGE_KEYS.TOKEN,

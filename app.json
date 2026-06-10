@@ -22,7 +22,8 @@
         "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#3e2a56"
       },
-      "package": "com.homezy.app"
+      "package": "com.homezy.app",
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
       "bundler": "metro",

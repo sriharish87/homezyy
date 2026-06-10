@@ -441,7 +441,7 @@ export default function BookingsScreen() {
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       {/* ── Header ────────────────────────────────────────── */}
       <View style={styles.header}>
-        <Text style={styles.title}>My Bookings</Text>
+        <Text style={styles.title}>{!isCustomer ? 'My Orders' : 'My Bookings'}</Text>
       </View>
 
       {/* ── Custom Tabs ───────────────────────────────────── */}

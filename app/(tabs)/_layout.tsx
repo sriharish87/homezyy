@@ -3,6 +3,7 @@ import { Tabs } from 'expo-router';
 import { Platform, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Colors, Typography, Shadow } from '@/constants/Theme';
+import { useAuth } from '@/context/AuthContext';
 
 type IconName = React.ComponentProps<typeof MaterialIcons>['name'];
 
@@ -23,6 +24,8 @@ function TabIcon({ name, color, focused }: TabIconProps) {
 export default function TabsLayout() {
   const { width } = useWindowDimensions();
   const isDesktop = width >= 1024;
+  const { user } = useAuth();
+  const isTechnician = user?.role === 'technician';
 
   return (
     <Tabs
@@ -50,6 +53,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="services"
         options={{
+          href: isTechnician ? null : '/services',
           title: 'Services',
           tabBarIcon: ({ color, focused }) => (
             <TabIcon name="list-alt" color={color} focused={focused} />
@@ -61,7 +65,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="bookings"
         options={{
-          title: 'Bookings',
+          title: isTechnician ? 'Orders' : 'Bookings',
           tabBarIcon: ({ color, focused }) => (
             <TabIcon name="calendar-month" color={color} focused={focused} />
           ),

@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, Radius, Shadow } from '@/constants/Theme';
 import { useSocket } from '@/context/SocketContext';
+import { useAuth } from '@/context/AuthContext';
 
 const BOOKING_DATA = {
   serviceName: 'Expert Electrician',
@@ -37,6 +38,7 @@ export default function BookingConfirmation() {
     status?: string;
   }>();
   const { bookingUpdate } = useSocket();
+  const { user } = useAuth();
 
   const [status, setStatus] = useState<'pending' | 'accepted' | 'declined'>(() => {
     if (params.status === 'accepted' || params.status === 'declined') return params.status;
@@ -102,11 +104,11 @@ export default function BookingConfirmation() {
       providerName: params.providerName || BOOKING_DATA.providerName,
       date: dateLabel,
       time: params.time || BOOKING_DATA.time,
-      location: BOOKING_DATA.location,
+      location: user?.location?.address_text || user?.address_text || BOOKING_DATA.location,
       bookingId: params.bookingId || BOOKING_DATA.bookingId,
       price: params.price ? `₹${params.price}` : BOOKING_DATA.price,
     };
-  }, [params.bookingId, params.date, params.price, params.providerName, params.serviceName, params.time]);
+  }, [params.bookingId, params.date, params.price, params.providerName, params.serviceName, params.time, user]);
 
   const title =
     status === 'accepted'
