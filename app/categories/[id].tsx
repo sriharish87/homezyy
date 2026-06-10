@@ -210,7 +210,7 @@ const card = StyleSheet.create({
 
 export default function SubServicesScreen() {
   const router   = useRouter();
-  const { id }   = useLocalSearchParams<{ id: string }>();
+  const { id }   = useLocalSearchParams();
   const category = id as string;
 
   const [activeTab,  setActiveTab]  = useState('All');
@@ -373,14 +373,14 @@ export default function SubServicesScreen() {
           <Text style={styles.emptyTabText}>No services in this tab.</Text>
         </View>
       ) : (
-        <FlatList<SubService>
+        <FlatList
           data={filtered}
-          keyExtractor={(item) => item.title}
+          keyExtractor={(item: SubService) => item.title}
           numColumns={2}
           columnWrapperStyle={styles.row}
           contentContainerStyle={styles.grid}
           showsVerticalScrollIndicator={false}
-          renderItem={({ item }) => (
+          renderItem={({ item }: { item: SubService }) => (
             <ServiceCard
               category={category}
               service={item}
