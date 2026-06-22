@@ -116,7 +116,7 @@ export async function fetchPopularServices(): Promise<Service[]> {
   const { ALL_SUBSERVICES } = await import('@/constants/Data');
   return [
     { ...(ALL_SUBSERVICES['Electrical']?.[0] ?? {}), id: 'pop-1', category: 'Electrical' } as Service,
-    { ...(ALL_SUBSERVICES['Plumbing']?.[0]   ?? {}), id: 'pop-2', category: 'Plumbing'   } as Service,
+    { ...(ALL_SUBSERVICES['Plumbing']?.[0] ?? {}), id: 'pop-2', category: 'Plumbing' } as Service,
   ];
 }
 

@@ -24,7 +24,7 @@ type Role = 'customer' | 'technician';
 
 export default function Login() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ role?: string }>();
+  const params = useLocalSearchParams() as { role?: string };
   const { login } = useAuth();
 
   const selectedRole: Role =
@@ -49,7 +49,7 @@ export default function Login() {
       setIsLoading(true);
       setErrorMessage('');
       await GoogleSignin.hasPlayServices();
-      const userInfo = await GoogleSignin.signIn();
+      const userInfo: any = await GoogleSignin.signIn();
       const idToken = userInfo.idToken || userInfo.data?.idToken;
 
       if (!idToken) {

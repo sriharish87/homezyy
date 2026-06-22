@@ -19,12 +19,13 @@ import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import { completeUserProfile } from '@/services/authService';
 import { useAuth } from '@/context/AuthContext';
 import LocationPicker from '@/components/LocationPicker';
-import { CATEGORIES } from '@/constants/Data';
+import { useServices } from '@/hooks/useServices';
 import { Colors, Typography, Spacing, Radius, Shadow } from '@/constants/Theme';
 
 export default function CompleteProfileScreen() {
   const router = useRouter();
   const { user, updateUser, authLoading } = useAuth();
+  const { categories } = useServices();
   const role = user?.role === 'technician' ? 'technician' : 'customer';
 
   const [phone, setPhone] = useState(user?.phone ?? '');
@@ -53,13 +54,13 @@ export default function CompleteProfileScreen() {
 
   const availableSubservices = useMemo(() => {
     return selectedServices.map((service) => {
-      const category = CATEGORIES.find((entry) => entry.id === service);
+      const category = categories.find((entry: any) => entry.id === service);
       const cleaned = (category?.subservices || []).filter(
-        (item) => !/visit/i.test(item.trim())
-      );
+        (item: any) => !/visit/i.test(item.title.trim())
+      ).map((item: any) => item.title);
       return { service, subservices: cleaned };
     });
-  }, [selectedServices]);
+  }, [selectedServices, categories]);
 
   useEffect(() => {
     const validSubservices = new Set(
@@ -238,7 +239,7 @@ export default function CompleteProfileScreen() {
                     <View style={styles.multiSelectContainer}>
                       <Text style={styles.multiSelectLabel}>Select services</Text>
                       <View style={styles.chipGroup}>
-                        {CATEGORIES.map((service) => {
+                        {categories.map((service: any) => {
                           const isSelected = selectedServices.includes(service.id);
                           return (
                             <TouchableOpacity

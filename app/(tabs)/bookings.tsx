@@ -124,13 +124,13 @@ function BookingCard({
           <Image source={{ uri: avatar }} style={bc.avatar} />
           <View style={bc.identityInfo}>
             <Text style={bc.provider}>{roleLabel}: {counterpartyName}</Text>
-            {isCustomer && booking.counterparty?.rating && (
+            {isCustomer && !!booking.counterparty?.rating && (
               <View style={bc.ratingBadge}>
                 <MaterialIcons name="star" size={12} color={Colors.star} />
                 <Text style={bc.ratingText}>{booking.counterparty.rating}</Text>
               </View>
             )}
-            {!isCustomer && booking.location?.addressText && (
+            {!isCustomer && !!booking.location?.addressText && (
               <Text style={bc.addressText} numberOfLines={1}>{booking.location.addressText}</Text>
             )}
           </View>
@@ -149,7 +149,7 @@ function BookingCard({
             {isCustomer && booking.status === 'accepted' && (
                <TouchableOpacity
                  style={[bc.payNowBtn, paymentLoading && bc.payNowBtnDisabled]}
-                 onPress={(e) => {
+                 onPress={(e: any) => {
                    e.stopPropagation?.();
                    if (onPayNow) onPayNow();
                  }}
@@ -167,22 +167,22 @@ function BookingCard({
                </TouchableOpacity>
             )}
 
-            {!isCustomer && booking.status === 'pending' && (
+            {!isCustomer && booking.status === 'pending' ? (
               <View style={bc.techActions}>
                 <TouchableOpacity
                   style={bc.declineBtn}
-                  onPress={(e) => { e.stopPropagation?.(); onRespond('declined'); }}
+                  onPress={(e: any) => { e.stopPropagation?.(); onRespond('declined'); }}
                 >
                   <Text style={bc.declineBtnText}>Decline</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={bc.acceptBtn}
-                  onPress={(e) => { e.stopPropagation?.(); onRespond('accepted'); }}
+                  onPress={(e: any) => { e.stopPropagation?.(); onRespond('accepted'); }}
                 >
                   <Text style={bc.acceptBtnText}>Accept</Text>
                 </TouchableOpacity>
               </View>
-            )}
+            ) : null}
 
             {booking.status === 'completed' && (
               <TouchableOpacity style={bc.rateBtn}>
@@ -471,7 +471,7 @@ export default function BookingsScreen() {
       ) : (
         <FlatList
           data={filteredBookings}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(item: UnifiedBooking) => item.id}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
@@ -487,7 +487,7 @@ export default function BookingsScreen() {
             </View>
           }
           ItemSeparatorComponent={() => <View style={{ height: Spacing.base }} />}
-          renderItem={({ item }) => (
+          renderItem={({ item }: { item: UnifiedBooking }) => (
             <BookingCard
               booking={item}
               isCustomer={isCustomer}
@@ -507,7 +507,7 @@ export default function BookingsScreen() {
 
       {/* ── Payment Modals ────────────────────────────────── */}
       <PaymentResultModal
-        result={paymentResult ? 'success' : razorpayError ? 'server_error' : null}
+        result={paymentResult ?? (razorpayError ? 'server_error' : null)}
         onDismiss={dismissResult}
       />
     </SafeAreaView>

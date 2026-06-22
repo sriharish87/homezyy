@@ -16,6 +16,7 @@ import {
 } from '@expo-google-fonts/manrope';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { SocketProvider } from '@/context/SocketContext';
+import { ServiceProvider } from '@/hooks/useServices';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
 import WebSidebar from '@/components/layout/WebSidebar';
 import SocketOverlay from '@/components/booking/SocketOverlay';
@@ -65,20 +66,22 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <AuthProvider>
-          <SocketProvider>
-            {/* Push notification bootstrap — registers token + handles tap routing */}
-            <PushNotificationBootstrap />
-            <StatusBar style="auto" />
-            <View style={isDesktop && !noSidebar ? styles.desktopWrapper : styles.mobileWrapper}>
-              {isDesktop && !noSidebar && <WebSidebar />}
-              <View style={styles.contentWrapper}>
-                <Stack screenOptions={{ headerShown: false }} />
-                <SocketOverlay />
+        <ServiceProvider>
+          <AuthProvider>
+            <SocketProvider>
+              {/* Push notification bootstrap — registers token + handles tap routing */}
+              <PushNotificationBootstrap />
+              <StatusBar style="auto" />
+              <View style={isDesktop && !noSidebar ? styles.desktopWrapper : styles.mobileWrapper}>
+                {isDesktop && !noSidebar && <WebSidebar />}
+                <View style={styles.contentWrapper}>
+                  <Stack screenOptions={{ headerShown: false }} />
+                  <SocketOverlay />
+                </View>
               </View>
-            </View>
-          </SocketProvider>
-        </AuthProvider>
+            </SocketProvider>
+          </AuthProvider>
+        </ServiceProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
@@ -92,7 +95,7 @@ export default function RootLayout() {
 function PushNotificationBootstrap() {
   const { isAuthenticated } = useAuth();
   const router = useRouter();
-  const responseListener = useRef<Notifications.Subscription | null>(null);
+  const responseListener = useRef<{ remove: () => void } | null>(null);
 
   // Register push token with backend when authenticated
   usePushNotifications(isAuthenticated);
@@ -103,7 +106,7 @@ function PushNotificationBootstrap() {
 
     // Listen for notification taps (background/killed → user taps banner)
     responseListener.current = Notifications.addNotificationResponseReceivedListener(
-      (response) => {
+      (response: any) => {
         const data = response.notification.request.content.data;
         const screen = data?.screen as string | undefined;
 

@@ -14,7 +14,7 @@ const CARD_W = SCREEN_W - Spacing.base * 2;
  * Horizontal scrolling offer banners with auto-advance and dot indicators.
  */
 export default function Offers() {
-  const flatRef    = useRef<FlatList<Offer>>(null);
+  const flatRef    = useRef<any>(null);
   const [current, setCurrent] = useState(0);
 
   const advance = useCallback(() => {
@@ -53,7 +53,7 @@ export default function Offers() {
       <FlatList<Offer>
         ref={flatRef}
         data={OFFERS}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item: Offer) => item.id}
         renderItem={renderItem}
         horizontal
         pagingEnabled
@@ -61,7 +61,7 @@ export default function Offers() {
         contentContainerStyle={{ paddingHorizontal: Spacing.base }}
         snapToInterval={CARD_W}
         decelerationRate="fast"
-        onMomentumScrollEnd={(e) => {
+        onMomentumScrollEnd={(e: any) => {
           const idx = Math.round(e.nativeEvent.contentOffset.x / CARD_W);
           setCurrent(idx);
         }}

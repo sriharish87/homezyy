@@ -152,8 +152,25 @@ export function usePaymentFlow(
         let orderId = orderCacheRef.current[bookingId];
 
         if (!orderId) {
-          const orderResponse = await createOrder(bookingId);
-          orderId = orderResponse.orderId;
+          console.log('[Payment] Step 1: Creating order for booking:', bookingId);
+          try {
+            const orderResponse = await createOrder(bookingId);
+            orderId = orderResponse.orderId;
+            console.log('[Payment] Order created:', orderId);
+          } catch (orderErr: any) {
+            // Handle 409: a pending transaction already exists
+            if (orderErr?.response?.status === 409) {
+              const existingOrderId = orderErr.response.data?.transaction?.razorpayOrderId;
+              if (existingOrderId) {
+                console.log('[Payment] 409 conflict - reusing existing order:', existingOrderId);
+                orderId = existingOrderId;
+              } else {
+                throw orderErr;
+              }
+            } else {
+              throw orderErr;
+            }
+          }
 
           if (!orderId) {
             throw new Error('Server did not return an orderId');
@@ -161,12 +178,15 @@ export function usePaymentFlow(
 
           // Cache it for retry
           orderCacheRef.current[bookingId] = orderId;
+        } else {
+          console.log('[Payment] Step 1: Reusing cached order:', orderId);
         }
 
-        // ── Step 2: Open Razorpay checkout ───────────
+        console.log('[Payment] Step 2: Opening Razorpay checkout with key:', RAZORPAY_KEY);
         let razorpayResult: RazorpaySuccessData;
         try {
           razorpayResult = await openRazorpay(orderId);
+          console.log('[Payment] Razorpay success:', JSON.stringify(razorpayResult));
         } catch (rzpError: any) {
           // Razorpay failure: user closed modal, bank declined, etc.
           // CRITICAL: Keep the UI open and Pay Now button active for retry
@@ -175,13 +195,14 @@ export function usePaymentFlow(
             rzpError?.description ||
             rzpError?.message ||
             'Payment was not completed. You can try again.';
+          console.log('[Payment] Razorpay SDK error:', desc, JSON.stringify(rzpError));
           setRazorpayError(desc);
           options?.onError?.(desc);
           // DON'T clear the cached orderId — user can retry
           return;
         }
 
-        // ── Step 3: Verify payment with backend ─────
+        console.log('[Payment] Step 3: Verifying payment with backend...');
         const verifyResult = await verifyPayment({
           razorpay_order_id: razorpayResult.razorpay_order_id,
           razorpay_payment_id: razorpayResult.razorpay_payment_id,
@@ -189,7 +210,9 @@ export function usePaymentFlow(
         });
 
         // ── Step 4: Map to UI scenario ──────────────
+        console.log('[Payment] Verify response:', JSON.stringify(verifyResult));
         const resultType = mapVerifyResponse(verifyResult);
+        console.log('[Payment] Result type:', resultType);
         setPaymentResult(resultType);
 
         if (resultType === 'success' || resultType === 'already_processed') {
@@ -205,6 +228,7 @@ export function usePaymentFlow(
           err?.response?.data?.message ||
           err?.message ||
           'Something went wrong. Please try again.';
+        console.log('[Payment] OUTER ERROR:', message, err?.response?.status, JSON.stringify(err?.response?.data));
         setRazorpayError(message);
         options?.onError?.(message);
       } finally {

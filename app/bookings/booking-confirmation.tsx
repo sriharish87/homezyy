@@ -28,7 +28,7 @@ const BOOKING_DATA = {
 
 export default function BookingConfirmation() {
   const router = useRouter();
-  const params = useLocalSearchParams<{
+  const params = useLocalSearchParams() as {
     bookingId?: string;
     serviceName?: string;
     providerName?: string;
@@ -36,7 +36,7 @@ export default function BookingConfirmation() {
     time?: string;
     price?: string;
     status?: string;
-  }>();
+  };
   const { bookingUpdate } = useSocket();
   const { user } = useAuth();
 
@@ -104,7 +104,7 @@ export default function BookingConfirmation() {
       providerName: params.providerName || BOOKING_DATA.providerName,
       date: dateLabel,
       time: params.time || BOOKING_DATA.time,
-      location: user?.location?.address_text || user?.address_text || BOOKING_DATA.location,
+      location: (user?.location as any)?.address_text || user?.address_text || BOOKING_DATA.location,
       bookingId: params.bookingId || BOOKING_DATA.bookingId,
       price: params.price ? `₹${params.price}` : BOOKING_DATA.price,
     };

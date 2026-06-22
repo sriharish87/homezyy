@@ -13,7 +13,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import api from '@/lib/axiosConfig';
-import { ALL_SUBSERVICES } from '@/constants/Data';
+import { useServices } from '@/hooks/useServices';
 import { Colors, Typography, Spacing, Radius, Shadow } from '@/constants/Theme';
 
 interface Technician {
@@ -70,7 +70,8 @@ function TechnicianCard({ technician, onPress }: { technician: Technician; onPre
 
 export default function TechniciansScreen() {
   const router = useRouter();
-  const { service, subservice } = useLocalSearchParams<{ service: string; subservice: string }>();
+  const { service, subservice } = useLocalSearchParams() as { service: string; subservice: string };
+  const { allSubservices } = useServices();
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -85,8 +86,8 @@ export default function TechniciansScreen() {
   const servicePayload = useMemo(() => {
     const serviceName = service ? decodeURIComponent(service) : '';
     const subName = subservice ? decodeURIComponent(subservice) : '';
-    const list = ALL_SUBSERVICES[serviceName] || [];
-    const match = list.find((item) => item.title === subName);
+    const list = allSubservices[serviceName] || [];
+    const match = list.find((item: any) => item.title === subName);
 
     return match
       ? { ...match, category: serviceName }
@@ -171,9 +172,9 @@ export default function TechniciansScreen() {
       ) : (
         <FlatList
           data={technicians}
-          keyExtractor={(item) => item._id}
+          keyExtractor={(item: Technician) => item._id}
           contentContainerStyle={styles.list}
-          renderItem={({ item }) => (
+          renderItem={({ item }: { item: Technician }) => (
             <TechnicianCard
               technician={item}
               onPress={() =>

@@ -103,7 +103,7 @@ export default function PaymentsScreen() {
       ) : (
         <FlatList
           data={transactions}
-          keyExtractor={(item) => item._id}
+          keyExtractor={(item: any) => item._id}
           renderItem={renderTransaction}
           contentContainerStyle={styles.listContent}
           refreshControl={

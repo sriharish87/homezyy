@@ -7,7 +7,7 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, Radius, Shadow } from '@/constants/Theme';
-import { CATEGORIES, type Category } from '@/constants/Data';
+import { useServices, type ServiceCategory } from '@/hooks/useServices';
 
 import LoadingScreen from '@/components/ui/LoadingScreen';
 
@@ -19,11 +19,11 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 // ── Accordion card ─────────────────────────────────────────
 
 interface CategoryCardProps {
-  category: Category;
+  category: ServiceCategory;
   isExpanded: boolean;
   searchQuery: string;
   onToggle: (id: string) => void;
-  onNavigate: (category: Category) => void;
+  onNavigate: (category: ServiceCategory) => void;
 }
 
 function CategoryCard({ category, isExpanded, searchQuery, onToggle, onNavigate }: CategoryCardProps) {
@@ -31,7 +31,7 @@ function CategoryCard({ category, isExpanded, searchQuery, onToggle, onNavigate 
 
   const subMatches = useMemo(() =>
     category.subservices.filter((s) =>
-      s.toLowerCase().includes(searchQuery.toLowerCase())
+      s.title.toLowerCase().includes(searchQuery.toLowerCase())
     ),
     [category.subservices, searchQuery]
   );
@@ -62,7 +62,7 @@ function CategoryCard({ category, isExpanded, searchQuery, onToggle, onNavigate 
 
         <TouchableOpacity
           style={[styles.chevronBtn, { backgroundColor: category.bgColor }]}
-          onPress={(e) => {
+          onPress={(e: any) => {
             e.stopPropagation?.();
             // Smooth height animation
             LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -102,7 +102,7 @@ function CategoryCard({ category, isExpanded, searchQuery, onToggle, onNavigate 
                   isSearching && subMatches.includes(sub) && { color: category.color, fontFamily: 'Manrope-SemiBold' },
                 ]}
               >
-                {sub}
+                {sub.title}
               </Text>
             </TouchableOpacity>
           ))}
@@ -116,25 +116,26 @@ function CategoryCard({ category, isExpanded, searchQuery, onToggle, onNavigate 
 
 export default function ServicesScreen() {
   const router = useRouter();
+  const { categories, isLoading } = useServices();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isNavigating, setIsNavigating] = useState(false);
   const [selectedCategoryName, setSelectedCategoryName] = useState("");
 
   const filteredCategories = useMemo(() => {
-    if (!searchQuery) return CATEGORIES;
+    if (!searchQuery) return categories;
     const q = searchQuery.toLowerCase();
-    return CATEGORIES.filter((cat) =>
+    return categories.filter((cat) =>
       cat.name.toLowerCase().includes(q) ||
-      cat.subservices.some((s) => s.toLowerCase().includes(q))
+      cat.subservices.some((s) => s.title.toLowerCase().includes(q))
     );
-  }, [searchQuery, CATEGORIES]);
+  }, [searchQuery, categories]);
 
   const toggleExpand = (id: string) => {
     setExpandedId((prev) => (prev === id ? null : id));
   };
 
-  const handleNavigate = (category: Category) => {
+  const handleNavigate = (category: ServiceCategory) => {
     setSelectedCategoryName(category.name);
     setIsNavigating(true);
 
@@ -173,9 +174,9 @@ export default function ServicesScreen() {
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       {/* Blurred loader overlay for navigation */}
-      {isNavigating && (
+      {(isNavigating || isLoading) && (
         <LoadingScreen
-          serviceName={selectedCategoryName}
+          serviceName={selectedCategoryName || "Services"}
           onComplete={() => {}}
         />
       )}

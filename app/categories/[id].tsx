@@ -8,7 +8,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, Radius, Shadow } from '@/constants/Theme';
-import { ALL_SUBSERVICES, CATEGORIES, type SubService, type Category } from '@/constants/Data';
+import { useServices, type Subservice as SubService } from '@/hooks/useServices';
 import LoadingScreen from '@/components/ui/LoadingScreen';
 import api from '@/lib/axiosConfig';
 
@@ -41,32 +41,6 @@ interface ServiceCardProps {
 }
 
 function ServiceCard({ category, service, isFavorited, onFavorite, onViewDetails }: ServiceCardProps) {
-  const [livePrice, setLivePrice] = useState<string>(service.price);
-
-  useEffect(() => {
-    let isMounted = true;
-    const fetchPrice = async () => {
-      try {
-        const serviceParam = encodeURIComponent(category);
-        const subserviceParam = encodeURIComponent(service.title);
-        const response = await api.get(`/pricing/${serviceParam}/${subserviceParam}`);
-        if (!isMounted) return;
-        
-        const payload = response?.data?.data ?? response?.data ?? {};
-        if (payload?.priceMid) {
-          setLivePrice(`₹${payload.priceMid}`);
-        } else if (payload?.price) {
-          setLivePrice(`₹${payload.price}`);
-        }
-      } catch (err) {
-        console.log('Failed to fetch price for', service.title);
-      }
-    };
-    if (category && service.title) {
-      fetchPrice();
-    }
-    return () => { isMounted = false; };
-  }, [category, service.title]);
 
   return (
     <View style={card.container}>
@@ -89,7 +63,7 @@ function ServiceCard({ category, service, isFavorited, onFavorite, onViewDetails
       <View style={card.body}>
         <Text style={card.title} numberOfLines={1}>{service.title}</Text>
         <Text style={card.meta} numberOfLines={1}>{service.reviews} reviews • {service.duration}</Text>
-        <Text style={card.price}>{livePrice}</Text>
+        <Text style={card.price}>{service.price}</Text>
 
         <View style={card.actions}>
           <TouchableOpacity style={card.viewBtn} onPress={() => onViewDetails(service)} activeOpacity={0.85}>
@@ -213,6 +187,7 @@ export default function SubServicesScreen() {
   const { id }   = useLocalSearchParams();
   const category = id as string;
 
+  const { categories, allSubservices } = useServices();
   const [activeTab,  setActiveTab]  = useState('All');
   const [favorites,  setFavorites]  = useState<Set<string>>(new Set());
   const [isLoading,  setIsLoading]  = useState(true);
@@ -227,7 +202,7 @@ export default function SubServicesScreen() {
   // Initial category load
   useEffect(() => {
     // Immediate fetch for local data to avoid double-loading blink
-    const data = ALL_SUBSERVICES[category as string] || [];
+    const data = allSubservices[category as string] || [];
     setServices(data);
     
     // Only show loading if we really need to (data is empty/fetching)
@@ -237,7 +212,7 @@ export default function SubServicesScreen() {
     } else {
       setIsLoading(false);
     }
-  }, [category]);
+  }, [category, allSubservices]);
 
   // Trigger content animation when loading stops
   useEffect(() => {
@@ -262,7 +237,7 @@ export default function SubServicesScreen() {
     }
   }, [isLoading, isNavigating]);
 
-  const categoryMeta = CATEGORIES.find((c: Category) => c.id === category);
+  const categoryMeta = categories.find((c: any) => c.id === category);
 
   const tabs = useMemo(() => {
     const unique = new Set(services.map((s: SubService) => s.tab));

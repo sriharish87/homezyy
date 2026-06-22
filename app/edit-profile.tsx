@@ -8,12 +8,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '@/context/AuthContext';
 import { Colors, Typography, Spacing, Radius } from '@/constants/Theme';
-import { CATEGORIES } from '@/constants/Data';
+import { useServices } from '@/hooks/useServices';
 import api from '@/lib/axiosConfig';
 
 export default function EditProfileScreen() {
   const router = useRouter();
   const { user, updateUser } = useAuth();
+  const { categories } = useServices();
   const isTech = user?.role === 'technician';
 
   const [name, setName] = useState(user?.name || '');
@@ -34,13 +35,13 @@ export default function EditProfileScreen() {
 
   const availableSubservices = useMemo(() => {
     return selectedServices.map((service) => {
-      const category = CATEGORIES.find((entry) => entry.id === service);
+      const category = categories.find((entry: any) => entry.id === service);
       const cleaned = (category?.subservices || []).filter(
-        (item) => !/visit/i.test(item.trim())
-      );
+        (item: any) => !/visit/i.test(item.title.trim())
+      ).map((item: any) => item.title);
       return { service, subservices: cleaned };
     });
-  }, [selectedServices]);
+  }, [selectedServices, categories]);
 
   useEffect(() => {
     const validSubservices = new Set(
@@ -227,7 +228,7 @@ export default function EditProfileScreen() {
                 <Text style={styles.label}>Select Services</Text>
                 <View style={styles.multiSelectContainer}>
                   <View style={styles.chipGroup}>
-                    {CATEGORIES.map((service) => {
+                    {categories.map((service: any) => {
                       const isSelected = selectedServices.includes(service.id);
                       return (
                         <TouchableOpacity

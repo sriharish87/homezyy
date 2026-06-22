@@ -15,47 +15,7 @@ import { useAuth } from '@/context/AuthContext';
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 const HERO_H = Math.min(SCREEN_H * 0.35, 280);
 
-// ── Package card ───────────────────────────────────────────
 
-interface Package {
-  id: string;
-  name: string;
-  description: string;
-  price: number;
-  icon: string;
-  popular?: boolean;
-}
-
-function PackageCard({ pkg, selected, onSelect }: { pkg: Package; selected: boolean; onSelect: () => void }) {
-  return (
-    <TouchableOpacity
-      style={[styles.pkgCard, selected && styles.pkgCardSelected, pkg.popular && styles.pkgCardPopular]}
-      onPress={onSelect}
-      activeOpacity={0.85}
-    >
-      {pkg.popular && (
-        <View style={styles.popularBadge}>
-          <Text style={styles.popularBadgeText}>POPULAR</Text>
-        </View>
-      )}
-      <View style={[styles.pkgIcon, selected && styles.pkgIconSelected]}>
-        <MaterialIcons name={pkg.icon as any} size={22} color={selected ? '#fff' : Colors.primary} />
-      </View>
-      <View style={styles.pkgBody}>
-        <Text style={[styles.pkgName, selected && styles.pkgNameSelected]}>{pkg.name}</Text>
-        <Text style={[styles.pkgDesc, selected && styles.pkgDescSelected]}>{pkg.description}</Text>
-      </View>
-      <View style={styles.pkgPriceCol}>
-        <Text style={[styles.pkgPrice, selected && styles.pkgPriceSelected]}>
-          ₹{pkg.price.toLocaleString('en-IN')}
-        </Text>
-        {selected && (
-          <MaterialIcons name="check-circle" size={18} color={Colors.primary} style={{ marginTop: 4 }} />
-        )}
-      </View>
-    </TouchableOpacity>
-  );
-}
 
 // ── Main screen ────────────────────────────────────────────
 
@@ -63,7 +23,7 @@ export default function ServiceDetailsScreen() {
   const router  = useRouter();
   const insets  = useSafeAreaInsets();
   const { user, isAuthenticated } = useAuth();
-  const { data, tech } = useLocalSearchParams<{ data: string; tech?: string }>();
+  const { data, tech } = useLocalSearchParams() as { data: string; tech?: string };
 
   // Parse service data passed from SubServices screen
   const service = (() => {
@@ -77,17 +37,10 @@ export default function ServiceDetailsScreen() {
     catch { return null; }
   })();
 
-  const [selectedPkg, setSelectedPkg] = useState<string>('Standard');
-  const [pricingLoading, setPricingLoading] = useState(true);
+  const [pricingLoading, setPricingLoading] = useState(false);
   const [pricingError, setPricingError] = useState<string | null>(null);
   const [bookingLoading, setBookingLoading] = useState(false);
   const [bookingError, setBookingError] = useState<string | null>(null);
-  const [basePrice, setBasePrice] = useState<number | null>(null);
-  const [pricingRange, setPricingRange] = useState<{
-    min: number | null;
-    mid: number | null;
-    max: number | null;
-  }>({ min: null, mid: null, max: null });
 
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
@@ -118,79 +71,7 @@ export default function ServiceDetailsScreen() {
     return 0;
   };
 
-  useEffect(() => {
-    const loadPricing = async () => {
-      try {
-        setPricingLoading(true);
-        setPricingError(null);
-
-        const serviceParam = encodeURIComponent(String(category));
-        const subserviceParam = encodeURIComponent(String(service.title));
-        const cacheBust = Date.now();
-        const response = await api.get(
-          `/pricing/${serviceParam}/${subserviceParam}?ts=${cacheBust}`
-        );
-        console.log('[Pricing] raw response:', response?.data);
-        const payload = response?.data?.data ?? response?.data ?? {};
-        const price =
-          payload?.priceMid ??
-          payload?.priceMin ??
-          payload?.priceMax ??
-          payload?.price ??
-          payload?.amount ??
-          payload?.pricePerHour ??
-          payload?.basePrice ??
-          payload?.pricing;
-
-        const parsed = parsePrice(price);
-        console.log('[Pricing] parsed price:', parsed, 'service price:', service.price);
-        setPricingRange({
-          min: parsePrice(payload?.priceMin),
-          mid: parsePrice(payload?.priceMid),
-          max: parsePrice(payload?.priceMax),
-        });
-        setBasePrice(parsed || parsePrice(service.price));
-      } catch (error) {
-        console.error('Failed to load pricing:', error);
-        setPricingError('Pricing unavailable');
-        setPricingRange({ min: null, mid: null, max: null });
-        setBasePrice(parsePrice(service.price));
-      } finally {
-        setPricingLoading(false);
-      }
-    };
-
-    if (category && service?.title) {
-      loadPricing();
-    } else {
-      setPricingLoading(false);
-      setPricingRange({ min: null, mid: null, max: null });
-      setBasePrice(parsePrice(service.price));
-    }
-  }, [category, service?.title]);
-
-  const resolvedPrice = basePrice ?? parsePrice(service.price);
-  const hasPricingRange =
-    typeof pricingRange.min === 'number' &&
-    typeof pricingRange.mid === 'number' &&
-    typeof pricingRange.max === 'number' &&
-    pricingRange.min > 0 &&
-    pricingRange.mid > 0 &&
-    pricingRange.max > 0;
-
-  const packages: Package[] = hasPricingRange
-    ? [
-        { id: 'Basic',    name: 'Basic Package',    description: 'Essential service covering core requirements.', price: pricingRange.min!, icon: 'bolt' },
-        { id: 'Standard', name: 'Standard Package', description: 'Our most popular choice with added care.',      price: pricingRange.mid!, icon: 'stars',   popular: true },
-        { id: 'Premium',  name: 'Premium Package',  description: 'Complete top-to-bottom service with premium care.', price: pricingRange.max!, icon: 'diamond' },
-      ]
-    : [
-        { id: 'Basic',    name: 'Basic Package',    description: 'Essential service covering core requirements.', price: Math.round(resolvedPrice * 0.7), icon: 'bolt' },
-        { id: 'Standard', name: 'Standard Package', description: 'Our most popular choice with added care.',      price: resolvedPrice,                icon: 'stars',   popular: true },
-        { id: 'Premium',  name: 'Premium Package',  description: 'Complete top-to-bottom service with premium care.', price: Math.round(resolvedPrice * 1.5), icon: 'diamond' },
-      ];
-
-  const currentPrice   = packages.find((p) => p.id === selectedPkg)?.price ?? resolvedPrice;
+  const currentPrice   = parsePrice(service?.price);
   const description    = SERVICE_DESCRIPTIONS[category] ?? `Professional ${service.title.toLowerCase()} service delivered by our top-rated technicians.`;
   const providerName = technician?.name || PROVIDER_NAMES[category] || 'Homezy Pro Provider';
   const providerAvatar =
@@ -421,20 +302,7 @@ export default function ServiceDetailsScreen() {
           <Text style={styles.description}>{description}</Text>
         </View>
 
-        {/* Packages */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Service Packages</Text>
-          <View style={styles.packagesList}>
-            {packages.map((pkg) => (
-              <PackageCard
-                key={pkg.id}
-                pkg={pkg}
-                selected={selectedPkg === pkg.id}
-                onSelect={() => setSelectedPkg(pkg.id)}
-              />
-            ))}
-          </View>
-        </View>
+
 
         {/* Schedule */}
         <View style={styles.section}>
@@ -699,71 +567,6 @@ const styles = StyleSheet.create({
     lineHeight: 24,
   },
 
-  // Packages
-  packagesList: { gap: 10 },
-  pkgCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.surface,
-    borderRadius: Radius.xl,
-    padding: Spacing.base,
-    borderWidth: 1.5,
-    borderColor: Colors.border,
-    gap: 12,
-    position: 'relative',
-  },
-  pkgCardSelected: {
-    borderColor: Colors.primary,
-    backgroundColor: Colors.primaryLight,
-  },
-  pkgCardPopular: {
-    borderColor: Colors.primary + '66',
-  },
-  popularBadge: {
-    position: 'absolute',
-    top: -1, right: 12,
-    backgroundColor: Colors.primary,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: Radius.full,
-  },
-  popularBadgeText: {
-    fontSize: 10,
-    fontFamily: 'Manrope-Bold',
-    color: '#fff',
-    letterSpacing: 0.5,
-  },
-  pkgIcon: {
-    width: 42, height: 42,
-    borderRadius: Radius.md,
-    backgroundColor: Colors.primaryLight,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  pkgIconSelected: {
-    backgroundColor: Colors.primary,
-  },
-  pkgBody: { flex: 1 },
-  pkgName: {
-    fontSize: Typography.base,
-    fontFamily: 'Manrope-Bold',
-    color: Colors.textPrimary,
-    marginBottom: 2,
-  },
-  pkgNameSelected: { color: Colors.primary },
-  pkgDesc: {
-    fontSize: Typography.xs,
-    fontFamily: 'Manrope-Regular',
-    color: Colors.textSecondary,
-  },
-  pkgDescSelected: { color: Colors.primaryMid ?? Colors.primary },
-  pkgPriceCol: { alignItems: 'flex-end' },
-  pkgPrice: {
-    fontSize: Typography.md,
-    fontFamily: 'Manrope-Bold',
-    color: Colors.textPrimary,
-  },
-  pkgPriceSelected: { color: Colors.primary },
 
   // Schedule
   scheduleCard: {
