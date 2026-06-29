@@ -15,14 +15,14 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.homezy.app"
+      "bundleIdentifier": "com.homezyy.app"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#3e2a56"
       },
-      "package": "com.homezy.app",
+      "package": "com.homezyy.app",
       "googleServicesFile": "./google-services.json"
     },
     "web": {
