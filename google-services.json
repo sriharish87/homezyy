@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "771954974865",
+    "project_id": "homezy-19925",
+    "storage_bucket": "homezy-19925.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:771954974865:android:7e63c273d1b32449bf5f30",
+        "android_client_info": {
+          "package_name": "com.homezy.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCdhx2sl9M-ht8nwvfj3JAtjOxQWLrD-Po"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:771954974865:android:a5dd41b173b5e071bf5f30",
+        "android_client_info": {
+          "package_name": "com.homezyy.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCdhx2sl9M-ht8nwvfj3JAtjOxQWLrD-Po"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
