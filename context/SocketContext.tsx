@@ -22,7 +22,7 @@ export type IncomingBookingRequest = {
 
 export type BookingUpdate = {
   bookingId: string;
-  status: 'accepted' | 'declined';
+  status: 'accepted' | 'declined' | 'arrived' | 'in_progress';
 };
 
 export type PaymentReceived = {
@@ -43,6 +43,8 @@ interface SocketContextValue {
   bookingUpdate: BookingUpdate | null;
   paymentReceived: PaymentReceived | null;
   respondBooking: (payload: RespondBookingPayload) => void;
+  joinTrackingRoom: (bookingId: string, callback?: (res: { success: boolean; lastLocation?: any }) => void) => void;
+  socket: Socket | null;
   clearIncomingRequest: () => void;
   clearBookingUpdate: () => void;
   clearPaymentReceived: () => void;
@@ -122,6 +124,17 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     socketRef.current.emit('respond_booking', payload);
   };
 
+  const joinTrackingRoom = (
+    bookingId: string,
+    callback?: (res: { success: boolean; lastLocation?: any }) => void
+  ) => {
+    if (!socketRef.current) {
+      callback?.({ success: false });
+      return;
+    }
+    socketRef.current.emit('join_tracking_room', { bookingId }, callback);
+  };
+
   const clearIncomingRequest = () => setIncomingRequest(null);
   const clearBookingUpdate = () => setBookingUpdate(null);
   const clearPaymentReceived = () => setPaymentReceived(null);
@@ -134,6 +147,8 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       bookingUpdate,
       paymentReceived,
       respondBooking,
+      joinTrackingRoom,
+      socket: socketRef.current,
       clearIncomingRequest,
       clearBookingUpdate,
       clearPaymentReceived,

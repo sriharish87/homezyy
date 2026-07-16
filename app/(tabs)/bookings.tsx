@@ -12,10 +12,11 @@ import { useSocket } from '@/context/SocketContext';
 import { usePaymentFlow } from '@/hooks/usePaymentFlow';
 import PaymentResultModal from '@/components/ui/PaymentResultModal';
 import api from '@/lib/axiosConfig';
+import { startTechnicianTracking, stopTechnicianTracking } from '@/services/backgroundTracking';
 
 // ── Types ──────────────────────────────────────────────────
 
-type BookingStatus = 'pending' | 'accepted' | 'rejected' | 'completed' | 'expired';
+type BookingStatus = 'pending' | 'accepted' | 'arrived' | 'in_progress' | 'rejected' | 'completed' | 'expired';
 
 interface UnifiedBooking {
   id: string;
@@ -62,11 +63,13 @@ function formatBookingTime(isoDate: string) {
 // ── Status chip ────────────────────────────────────────────
 
 const STATUS_META: Record<BookingStatus, { label: string; color: string; bg: string; icon: string }> = {
-  pending:   { label: 'Pending',   color: '#d97706', bg: '#fef3c7', icon: 'schedule' },
-  accepted:  { label: 'Accepted',  color: '#2563eb', bg: '#dbeafe', icon: 'thumb-up' },
-  completed: { label: 'Paid',      color: '#059669', bg: '#d1fae5', icon: 'check-circle' },
-  rejected:  { label: 'Cancelled', color: '#dc2626', bg: '#fee2e2', icon: 'cancel' },
-  expired:   { label: 'Expired',   color: '#dc2626', bg: '#fee2e2', icon: 'cancel' },
+  pending:     { label: 'Pending',     color: '#d97706', bg: '#fef3c7', icon: 'schedule' },
+  accepted:    { label: 'Accepted',    color: '#2563eb', bg: '#dbeafe', icon: 'thumb-up' },
+  in_progress: { label: 'In Progress', color: '#7c3aed', bg: '#ede9fe', icon: 'my-location' },
+  arrived:     { label: 'Arrived',     color: '#059669', bg: '#d1fae5', icon: 'location-on' },
+  completed:   { label: 'Paid',        color: '#059669', bg: '#d1fae5', icon: 'check-circle' },
+  rejected:    { label: 'Cancelled',   color: '#dc2626', bg: '#fee2e2', icon: 'cancel' },
+  expired:     { label: 'Expired',     color: '#dc2626', bg: '#fee2e2', icon: 'cancel' },
 };
 
 function StatusChip({ status }: { status: BookingStatus }) {
@@ -98,6 +101,8 @@ function BookingCard({
   onPayNow,
   paymentLoading,
   onRespond,
+  onStartTrip,
+  onTrackLive,
 }: {
   booking: UnifiedBooking;
   isCustomer: boolean;
@@ -105,6 +110,8 @@ function BookingCard({
   onPayNow?: () => void;
   paymentLoading?: boolean;
   onRespond: (status: 'accepted' | 'declined') => void;
+  onStartTrip?: () => void;
+  onTrackLive?: () => void;
 }) {
   const formattedTime = formatBookingTime(booking.bookingTime);
   const counterpartyName = booking.counterparty?.name || 'Unknown';
@@ -146,7 +153,7 @@ function BookingCard({
 
           {/* Contextual CTA */}
           <View style={bc.actions}>
-            {isCustomer && booking.status === 'accepted' && (
+            {isCustomer && (booking.status === 'accepted' || booking.status === 'arrived') && (
                <TouchableOpacity
                  style={[bc.payNowBtn, paymentLoading && bc.payNowBtnDisabled]}
                  onPress={(e: any) => {
@@ -167,6 +174,17 @@ function BookingCard({
                </TouchableOpacity>
             )}
 
+            {isCustomer && (booking.status === 'in_progress' || booking.status === 'arrived') && (
+              <TouchableOpacity
+                style={bc.trackLiveBtn}
+                onPress={(e: any) => { e.stopPropagation?.(); onTrackLive?.(); }}
+                activeOpacity={0.8}
+              >
+                <MaterialIcons name="my-location" size={14} color="#fff" />
+                <Text style={bc.trackLiveBtnText}>Track Live</Text>
+              </TouchableOpacity>
+            )}
+
             {!isCustomer && booking.status === 'pending' ? (
               <View style={bc.techActions}>
                 <TouchableOpacity
@@ -183,6 +201,24 @@ function BookingCard({
                 </TouchableOpacity>
               </View>
             ) : null}
+
+            {!isCustomer && booking.status === 'accepted' && (
+              <TouchableOpacity
+                style={bc.startTripBtn}
+                onPress={(e: any) => { e.stopPropagation?.(); onStartTrip?.(); }}
+                activeOpacity={0.8}
+              >
+                <MaterialIcons name="rocket-launch" size={14} color="#fff" />
+                <Text style={bc.startTripBtnText}>Start Trip & Tracking</Text>
+              </TouchableOpacity>
+            )}
+
+            {!isCustomer && booking.status === 'in_progress' && (
+              <View style={bc.activeTripBadge}>
+                <MaterialIcons name="radar" size={14} color={Colors.primary} />
+                <Text style={bc.activeTripText}>Tracking Active (10m Filter)</Text>
+              </View>
+            )}
 
             {booking.status === 'completed' && (
               <TouchableOpacity style={bc.rateBtn}>
@@ -328,6 +364,30 @@ const bc = StyleSheet.create({
   acceptBtnText: {
     fontSize: Typography.sm, fontFamily: 'Manrope-Bold', color: '#fff',
   },
+  trackLiveBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: '#7c3aed', paddingHorizontal: 14, paddingVertical: 8,
+    borderRadius: Radius.full,
+  },
+  trackLiveBtnText: {
+    fontSize: Typography.sm, fontFamily: 'Manrope-Bold', color: '#fff',
+  },
+  startTripBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: Colors.primary, paddingHorizontal: 14, paddingVertical: 8,
+    borderRadius: Radius.full,
+  },
+  startTripBtnText: {
+    fontSize: Typography.sm, fontFamily: 'Manrope-Bold', color: '#fff',
+  },
+  activeTripBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: '#ede9fe', paddingHorizontal: 12, paddingVertical: 6,
+    borderRadius: Radius.full, borderWidth: 1, borderColor: '#7c3aed',
+  },
+  activeTripText: {
+    fontSize: Typography.sm, fontFamily: 'Manrope-Bold', color: '#7c3aed',
+  },
 });
 
 // ── Main screen ────────────────────────────────────────────
@@ -408,6 +468,27 @@ export default function BookingsScreen() {
     });
   };
 
+  // ── Handle Start Trip for Techs (Phase 1 Trigger) ─────────
+  const handleStartTrip = async (bookingId: string) => {
+    const b = bookings.find((x) => x.id === bookingId);
+    if (!b || !b.counterparty) return;
+
+    const started = await startTechnicianTracking(bookingId);
+    if (started) {
+      setBookings((prev) =>
+        prev.map((item) =>
+          item.id === bookingId ? { ...item, status: 'in_progress' } : item
+        )
+      );
+      // Emit via socket so customer sees status transition
+      respondBooking({
+        bookingId,
+        status: 'in_progress' as any,
+        customerId: b.counterparty.id,
+      });
+    }
+  };
+
   // ── Filter logic ─────────────────────────────────────────
   const filteredBookings = useMemo(() => {
     const now = new Date();
@@ -443,6 +524,19 @@ export default function BookingsScreen() {
       <View style={styles.header}>
         <Text style={styles.title}>{!isCustomer ? 'My Orders' : 'My Bookings'}</Text>
       </View>
+
+      {/* ── UI Guard: Persistent On-Screen Warning for Technicians ── */}
+      {!isCustomer && bookings.some((b) => b.status === 'in_progress') && (
+        <View style={styles.uiGuardBanner}>
+          <MaterialIcons name="warning" size={20} color="#d97706" />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.uiGuardTitle}>Active Trip in Progress</Text>
+            <Text style={styles.uiGuardDesc}>
+              Background GPS tracking is active. Do not swipe or force-close the app during this service trip.
+            </Text>
+          </View>
+        </View>
+      )}
 
       {/* ── Custom Tabs ───────────────────────────────────── */}
       <View style={styles.tabsWrap}>
@@ -500,6 +594,8 @@ export default function BookingsScreen() {
               }}
               paymentLoading={paymentLoading && payingBookingId === item.id}
               onRespond={(status) => handleRespond(item.id, status)}
+              onStartTrip={() => handleStartTrip(item.id)}
+              onTrackLive={() => router.push(`/bookings/tracking/${item.id}`)}
             />
           )}
         />
@@ -567,5 +663,16 @@ const styles = StyleSheet.create({
   },
   emptyDesc: {
     fontSize: Typography.base, fontFamily: 'Manrope-Medium', color: Colors.textSecondary, textAlign: 'center',
+  },
+  uiGuardBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: '#fef3c7', paddingHorizontal: Spacing.base, paddingVertical: 12,
+    borderBottomWidth: 1, borderBottomColor: '#fde68a',
+  },
+  uiGuardTitle: {
+    fontSize: Typography.sm, fontFamily: 'Manrope-Bold', color: '#92400e',
+  },
+  uiGuardDesc: {
+    fontSize: 12, fontFamily: 'Manrope-Medium', color: '#b45309', marginTop: 2,
   },
 });

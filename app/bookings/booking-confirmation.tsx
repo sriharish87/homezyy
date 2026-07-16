@@ -40,8 +40,8 @@ export default function BookingConfirmation() {
   const { bookingUpdate } = useSocket();
   const { user } = useAuth();
 
-  const [status, setStatus] = useState<'pending' | 'accepted' | 'declined'>(() => {
-    if (params.status === 'accepted' || params.status === 'declined') return params.status;
+  const [status, setStatus] = useState<'pending' | 'accepted' | 'declined' | 'arrived' | 'in_progress'>(() => {
+    if (params.status === 'accepted' || params.status === 'declined' || params.status === 'arrived' || params.status === 'in_progress') return params.status as any;
     return 'pending';
   });
 

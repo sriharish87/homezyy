@@ -16,6 +16,10 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '@/context/AuthContext';
 import { Colors, Typography, Spacing, Radius, Shadow } from '@/constants/Theme';
 import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
+import * as Google from 'expo-auth-session/providers/google';
+import * as WebBrowser from 'expo-web-browser';
+
+WebBrowser.maybeCompleteAuthSession();
 
 GoogleSignin.configure({
   webClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID || '',
@@ -33,6 +37,45 @@ export default function Login() {
   const [isLoading, setIsLoading] = React.useState(false);
   const [errorMessage, setErrorMessage] = React.useState('');
 
+  // ── Web Google Auth Fallback ────────────────────────────────
+  const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
+    clientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID || '',
+  });
+
+  React.useEffect(() => {
+    if (response?.type === 'success') {
+      const { id_token } = response.params;
+      if (id_token) {
+        handleWebTokenLogin(id_token);
+      }
+    } else if (response?.type === 'error' || response?.type === 'dismiss') {
+      setIsLoading(false);
+      if (response.type === 'error') {
+        setErrorMessage('Google login failed on web');
+      }
+    }
+  }, [response]);
+
+  const handleWebTokenLogin = async (idToken: string) => {
+    try {
+      setIsLoading(true);
+      setErrorMessage('');
+      const sessionUser = await login(idToken, selectedRole);
+      if (sessionUser) {
+        router.replace(
+          sessionUser.isProfileComplete
+            ? '/(tabs)/home'
+            : ('/complete-profile' as any)
+        );
+      }
+    } catch (error) {
+      console.error(error);
+      setErrorMessage('Google login failed');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Entrance animation
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
   const slideAnim = React.useRef(new Animated.Value(30)).current;
@@ -45,10 +88,18 @@ export default function Login() {
   }, []);
 
   const handleGoogleLogin = async () => {
+    if (Platform.OS === 'web') {
+      setIsLoading(true);
+      setErrorMessage('');
+      await promptAsync();
+      return;
+    }
     try {
       setIsLoading(true);
       setErrorMessage('');
-      await GoogleSignin.hasPlayServices();
+      if (Platform.OS === 'android') {
+        await GoogleSignin.hasPlayServices();
+      }
       const userInfo: any = await GoogleSignin.signIn();
       const idToken = userInfo.idToken || userInfo.data?.idToken;
 
