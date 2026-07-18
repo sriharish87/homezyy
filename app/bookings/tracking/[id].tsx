@@ -24,6 +24,7 @@ interface BookingDetails {
   id: string;
   serviceTitle: string;
   status: string;
+  completionOtp?: string | null;
   counterparty?: {
     name: string;
     phone: string;
@@ -129,23 +130,43 @@ export default function LiveTrackingScreen() {
       }
     };
 
-    const handleArrived = (payload: { bookingId: string }) => {
+    const handleArrived = (payload: { bookingId: string; completionOtp?: string; status?: string }) => {
       if (payload.bookingId === id) {
-        console.log('[LiveTrackingScreen] Technician arrived geofence triggered!');
+        console.log('[LiveTrackingScreen] Technician arrived geofence triggered!', payload);
         setArrived(true);
+        if (payload.completionOtp) {
+          setBooking((prev) => prev ? { ...prev, completionOtp: payload.completionOtp, status: payload.status || 'arrived' } : prev);
+        } else {
+          fetchBookingInfo();
+        }
+      }
+    };
+
+    const handleBookingUpdate = (payload: { bookingId: string; status?: string; completionOtp?: string }) => {
+      if (payload.bookingId === id) {
+        if (payload.status === 'arrived' || payload.status === 'paid') {
+          setArrived(true);
+        }
+        if (payload.completionOtp) {
+          setBooking((prev) => prev ? { ...prev, completionOtp: payload.completionOtp, status: payload.status || prev.status } : prev);
+        } else {
+          fetchBookingInfo();
+        }
       }
     };
 
     socket.on('location_broadcast', handleLocationBroadcast);
     socket.on('technician_arrived', handleArrived);
+    socket.on('booking_update', handleBookingUpdate);
     socket.on('initial_location', handleLocationBroadcast);
 
     return () => {
       socket.off('location_broadcast', handleLocationBroadcast);
       socket.off('technician_arrived', handleArrived);
+      socket.off('booking_update', handleBookingUpdate);
       socket.off('initial_location', handleLocationBroadcast);
     };
-  }, [socket, id]);
+  }, [socket, id, fetchBookingInfo]);
 
   const targetLat = booking?.serviceLocation?.coordinates?.[1] || 13.0827;
   const targetLng = booking?.serviceLocation?.coordinates?.[0] || 80.2707;
@@ -233,6 +254,20 @@ export default function LiveTrackingScreen() {
           )}
         </View>
 
+        {/* ── Job Completion Verification Code Banner ── */}
+        {(arrived || booking?.status === 'paid' || booking?.completionOtp) && (
+          <View style={styles.otpBanner}>
+            <View style={styles.otpHeader}>
+              <MaterialIcons name="lock" size={16} color="#059669" />
+              <Text style={styles.otpTitle}>Job Completion OTP</Text>
+            </View>
+            <Text style={styles.otpSub}>Share with technician when service is completed:</Text>
+            <View style={styles.otpCodeBox}>
+              <Text style={styles.otpCodeText}>{booking?.completionOtp || '••••'}</Text>
+            </View>
+          </View>
+        )}
+
         <View style={styles.actionsRow}>
           <TouchableOpacity style={styles.callBtn} activeOpacity={0.8}>
             <MaterialIcons name="phone" size={18} color="#fff" />
@@ -303,4 +338,16 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surfaceAlt, justifyContent: 'center', alignItems: 'center',
   },
   doneBtnText: { fontSize: Typography.sm, fontFamily: 'Manrope-Bold', color: Colors.textPrimary },
+  otpBanner: {
+    backgroundColor: '#ecfdf5', borderWidth: 1, borderColor: '#a7f3d0',
+    borderRadius: Radius.lg, padding: 12, marginBottom: Spacing.base,
+  },
+  otpHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
+  otpTitle: { fontSize: Typography.sm, fontFamily: 'Manrope-Bold', color: '#065f46' },
+  otpSub: { fontSize: 12, fontFamily: 'Manrope-Medium', color: '#047857', marginBottom: 8 },
+  otpCodeBox: {
+    backgroundColor: '#fff', borderWidth: 1, borderColor: '#10b981',
+    borderRadius: Radius.md, paddingVertical: 6, paddingHorizontal: 16, alignSelf: 'flex-start',
+  },
+  otpCodeText: { fontSize: Typography.lg, fontFamily: 'Manrope-Black', color: '#059669', letterSpacing: 4 },
 });

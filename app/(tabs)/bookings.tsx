@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  Image, FlatList, ActivityIndicator, RefreshControl,
+  Image, FlatList, ActivityIndicator, RefreshControl, Modal, TextInput, Alert,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -16,7 +16,7 @@ import { startTechnicianTracking, stopTechnicianTracking } from '@/services/back
 
 // ── Types ──────────────────────────────────────────────────
 
-type BookingStatus = 'pending' | 'accepted' | 'arrived' | 'in_progress' | 'rejected' | 'completed' | 'expired';
+type BookingStatus = 'pending' | 'accepted' | 'arrived' | 'in_progress' | 'paid' | 'rejected' | 'completed' | 'expired';
 
 interface UnifiedBooking {
   id: string;
@@ -36,6 +36,8 @@ interface UnifiedBooking {
   location?: {
     addressText: string;
   } | null;
+  completionOtp?: string | null;
+  isPaid?: boolean;
 }
 
 // ── Formatting ─────────────────────────────────────────────
@@ -67,7 +69,8 @@ const STATUS_META: Record<BookingStatus, { label: string; color: string; bg: str
   accepted:    { label: 'Accepted',    color: '#2563eb', bg: '#dbeafe', icon: 'thumb-up' },
   in_progress: { label: 'In Progress', color: '#7c3aed', bg: '#ede9fe', icon: 'my-location' },
   arrived:     { label: 'Arrived',     color: '#059669', bg: '#d1fae5', icon: 'location-on' },
-  completed:   { label: 'Paid',        color: '#059669', bg: '#d1fae5', icon: 'check-circle' },
+  paid:        { label: 'Paid (Wait OTP)', color: '#059669', bg: '#d1fae5', icon: 'check-circle' },
+  completed:   { label: 'Completed',   color: '#059669', bg: '#d1fae5', icon: 'task-alt' },
   rejected:    { label: 'Cancelled',   color: '#dc2626', bg: '#fee2e2', icon: 'cancel' },
   expired:     { label: 'Expired',     color: '#dc2626', bg: '#fee2e2', icon: 'cancel' },
 };
@@ -103,6 +106,7 @@ function BookingCard({
   onRespond,
   onStartTrip,
   onTrackLive,
+  onVerifyOtp,
 }: {
   booking: UnifiedBooking;
   isCustomer: boolean;
@@ -112,6 +116,7 @@ function BookingCard({
   onRespond: (status: 'accepted' | 'declined') => void;
   onStartTrip?: () => void;
   onTrackLive?: () => void;
+  onVerifyOtp?: () => void;
 }) {
   const formattedTime = formatBookingTime(booking.bookingTime);
   const counterpartyName = booking.counterparty?.name || 'Unknown';
@@ -143,6 +148,20 @@ function BookingCard({
           </View>
         </View>
 
+        {/* Job Completion Verification Code Banner (Customer View) */}
+        {isCustomer && (booking.status === 'arrived' || booking.status === 'in_progress' || booking.status === 'paid' || booking.completionOtp) && (
+          <View style={bc.otpBanner}>
+            <View style={bc.otpBannerTop}>
+              <MaterialIcons name="lock" size={16} color="#059669" />
+              <Text style={bc.otpTitle}>Job Completion OTP</Text>
+            </View>
+            <Text style={bc.otpDesc}>Share this code with the technician after your service is finished:</Text>
+            <View style={bc.otpBox}>
+              <Text style={bc.otpCode}>{booking.completionOtp || '••••'}</Text>
+            </View>
+          </View>
+        )}
+
         <View style={bc.detail}>
           <MaterialIcons name="event" size={14} color={Colors.textMuted} />
           <Text style={bc.detailText}>{formattedTime}</Text>
@@ -153,7 +172,7 @@ function BookingCard({
 
           {/* Contextual CTA */}
           <View style={bc.actions}>
-            {isCustomer && (booking.status === 'accepted' || booking.status === 'arrived') && (
+            {isCustomer && (booking.status === 'accepted' || booking.status === 'arrived' || booking.status === 'in_progress') && !booking.isPaid && (
                <TouchableOpacity
                  style={[bc.payNowBtn, paymentLoading && bc.payNowBtnDisabled]}
                  onPress={(e: any) => {
@@ -174,7 +193,7 @@ function BookingCard({
                </TouchableOpacity>
             )}
 
-            {isCustomer && (booking.status === 'in_progress' || booking.status === 'arrived') && (
+            {isCustomer && (booking.status === 'in_progress' || booking.status === 'arrived' || booking.status === 'paid') && (
               <TouchableOpacity
                 style={bc.trackLiveBtn}
                 onPress={(e: any) => { e.stopPropagation?.(); onTrackLive?.(); }}
@@ -213,10 +232,21 @@ function BookingCard({
               </TouchableOpacity>
             )}
 
+            {!isCustomer && (booking.status === 'arrived' || booking.status === 'in_progress' || booking.status === 'paid') && (
+              <TouchableOpacity
+                style={bc.verifyOtpBtn}
+                onPress={(e: any) => { e.stopPropagation?.(); onVerifyOtp?.(); }}
+                activeOpacity={0.8}
+              >
+                <MaterialIcons name="verified" size={14} color="#fff" />
+                <Text style={bc.verifyOtpBtnText}>Verify Completion OTP</Text>
+              </TouchableOpacity>
+            )}
+
             {!isCustomer && booking.status === 'in_progress' && (
               <View style={bc.activeTripBadge}>
                 <MaterialIcons name="radar" size={14} color={Colors.primary} />
-                <Text style={bc.activeTripText}>Tracking Active (10m Filter)</Text>
+                <Text style={bc.activeTripText}>Tracking Active</Text>
               </View>
             )}
 
@@ -380,6 +410,14 @@ const bc = StyleSheet.create({
   startTripBtnText: {
     fontSize: Typography.sm, fontFamily: 'Manrope-Bold', color: '#fff',
   },
+  verifyOtpBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: '#059669', paddingHorizontal: 14, paddingVertical: 8,
+    borderRadius: Radius.full,
+  },
+  verifyOtpBtnText: {
+    fontSize: Typography.sm, fontFamily: 'Manrope-Bold', color: '#fff',
+  },
   activeTripBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     backgroundColor: '#ede9fe', paddingHorizontal: 12, paddingVertical: 6,
@@ -387,6 +425,46 @@ const bc = StyleSheet.create({
   },
   activeTripText: {
     fontSize: Typography.sm, fontFamily: 'Manrope-Bold', color: '#7c3aed',
+  },
+  otpBanner: {
+    backgroundColor: '#ecfdf5',
+    borderWidth: 1,
+    borderColor: '#a7f3d0',
+    borderRadius: Radius.lg,
+    padding: 12,
+    marginBottom: 12,
+  },
+  otpBannerTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
+  otpTitle: {
+    fontSize: Typography.sm,
+    fontFamily: 'Manrope-Bold',
+    color: '#065f46',
+  },
+  otpDesc: {
+    fontSize: 12,
+    fontFamily: 'Manrope-Medium',
+    color: '#047857',
+    marginBottom: 8,
+  },
+  otpBox: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#10b981',
+    borderRadius: Radius.md,
+    paddingVertical: 6,
+    paddingHorizontal: 16,
+    alignSelf: 'flex-start',
+  },
+  otpCode: {
+    fontSize: Typography.lg,
+    fontFamily: 'Manrope-Black',
+    color: '#059669',
+    letterSpacing: 4,
   },
 });
 
@@ -397,7 +475,7 @@ type FilterTab = 'upcoming' | 'completed';
 export default function BookingsScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  const { respondBooking } = useSocket();
+  const { socket, respondBooking } = useSocket();
   const isCustomer = user?.role === 'customer';
 
   const [activeTab, setActiveTab] = useState<FilterTab>('upcoming');
@@ -405,6 +483,12 @@ export default function BookingsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [payingBookingId, setPayingBookingId] = useState<string | null>(null);
+
+  // Verification modal state for technician
+  const [verifyModalVisible, setVerifyModalVisible] = useState(false);
+  const [verifyingBookingId, setVerifyingBookingId] = useState<string | null>(null);
+  const [otpInput, setOtpInput] = useState('');
+  const [otpSubmitting, setOtpSubmitting] = useState(false);
 
   // ── Payment hook ─────────────────────────────────────────
   const {
@@ -442,6 +526,23 @@ export default function BookingsScreen() {
       loadBookings();
     }, [loadBookings])
   );
+
+  useEffect(() => {
+    if (!socket) return;
+    const handleUpdate = () => {
+      loadBookings();
+    };
+    socket.on('booking_update', handleUpdate);
+    socket.on('job_completed', handleUpdate);
+    socket.on('technician_arrived', handleUpdate);
+    socket.on('payment_received', handleUpdate);
+    return () => {
+      socket.off('booking_update', handleUpdate);
+      socket.off('job_completed', handleUpdate);
+      socket.off('technician_arrived', handleUpdate);
+      socket.off('payment_received', handleUpdate);
+    };
+  }, [socket, loadBookings]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -596,6 +697,11 @@ export default function BookingsScreen() {
               onRespond={(status) => handleRespond(item.id, status)}
               onStartTrip={() => handleStartTrip(item.id)}
               onTrackLive={() => router.push(`/bookings/tracking/${item.id}`)}
+              onVerifyOtp={() => {
+                setVerifyingBookingId(item.id);
+                setOtpInput('');
+                setVerifyModalVisible(true);
+              }}
             />
           )}
         />
@@ -606,6 +712,85 @@ export default function BookingsScreen() {
         result={paymentResult ?? (razorpayError ? 'server_error' : null)}
         onDismiss={dismissResult}
       />
+
+      {/* ── OTP Verification Modal for Technicians ──────────── */}
+      <Modal
+        visible={verifyModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setVerifyModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <MaterialIcons name="lock-outline" size={32} color={Colors.primary} />
+              <Text style={styles.modalTitle}>Verify Completion OTP</Text>
+              <Text style={styles.modalSub}>
+                Ask the customer for their 4-digit job completion code and enter it below to finish the job.
+              </Text>
+            </View>
+
+            <TextInput
+              style={styles.otpInput}
+              placeholder="e.g. 4921"
+              placeholderTextColor="#9ca3af"
+              keyboardType="number-pad"
+              maxLength={4}
+              value={otpInput}
+              onChangeText={setOtpInput}
+              autoFocus
+            />
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => setVerifyModalVisible(false)}
+                disabled={otpSubmitting}
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalSubmitBtn, otpSubmitting && styles.modalSubmitBtnDisabled]}
+                onPress={async () => {
+                  if (!otpInput || otpInput.trim().length < 4) {
+                    Alert.alert('Invalid OTP', 'Please enter the 4-digit code provided by the customer.');
+                    return;
+                  }
+                  if (!verifyingBookingId) return;
+
+                  try {
+                    setOtpSubmitting(true);
+                    const res = await api.post(`/bookings/${verifyingBookingId}/verify-completion`, {
+                      otp: otpInput.trim(),
+                    });
+                    if (res.data?.success) {
+                      setBookings((prev) =>
+                        prev.map((item) =>
+                          item.id === verifyingBookingId ? { ...item, status: 'completed' } : item
+                        )
+                      );
+                      setVerifyModalVisible(false);
+                      Alert.alert('Job Completed!', 'The service job has been successfully completed and verified.');
+                      loadBookings();
+                    }
+                  } catch (err: any) {
+                    Alert.alert('Verification Failed', err?.response?.data?.message || 'Invalid OTP code. Please check with customer.');
+                  } finally {
+                    setOtpSubmitting(false);
+                  }
+                }}
+                disabled={otpSubmitting}
+              >
+                {otpSubmitting ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.modalSubmitText}>Complete Job</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -674,5 +859,85 @@ const styles = StyleSheet.create({
   },
   uiGuardDesc: {
     fontSize: 12, fontFamily: 'Manrope-Medium', color: '#b45309', marginTop: 2,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: Spacing.base,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 380,
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.xl,
+    padding: Spacing.lg,
+    ...Shadow.md,
+  },
+  modalHeader: {
+    alignItems: 'center',
+    marginBottom: Spacing.md,
+  },
+  modalTitle: {
+    fontSize: Typography.lg,
+    fontFamily: 'Manrope-Black',
+    color: Colors.textPrimary,
+    marginTop: 8,
+  },
+  modalSub: {
+    fontSize: Typography.sm,
+    fontFamily: 'Manrope-Medium',
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    marginTop: 4,
+  },
+  otpInput: {
+    backgroundColor: Colors.surfaceAlt,
+    borderWidth: 2,
+    borderColor: Colors.primary,
+    borderRadius: Radius.lg,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    fontSize: 24,
+    fontFamily: 'Manrope-Black',
+    color: Colors.textPrimary,
+    textAlign: 'center',
+    letterSpacing: 8,
+    marginBottom: Spacing.lg,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  modalCancelBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: Radius.full,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalCancelText: {
+    fontSize: Typography.base,
+    fontFamily: 'Manrope-Bold',
+    color: Colors.textSecondary,
+  },
+  modalSubmitBtn: {
+    flex: 1.5,
+    paddingVertical: 12,
+    borderRadius: Radius.full,
+    backgroundColor: '#059669',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalSubmitBtnDisabled: {
+    opacity: 0.7,
+  },
+  modalSubmitText: {
+    fontSize: Typography.base,
+    fontFamily: 'Manrope-Bold',
+    color: '#fff',
   },
 });

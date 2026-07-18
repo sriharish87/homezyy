@@ -43,7 +43,7 @@ export default function TabsLayout() {
         name="home"
         options={{
           title: 'Home',
-          tabBarIcon: ({ color, focused }) => (
+          tabBarIcon: ({ color, focused }: { color: string; focused: boolean }) => (
             <TabIcon name="home" color={color} focused={focused} />
           ),
         }}
@@ -55,7 +55,7 @@ export default function TabsLayout() {
         options={{
           href: isTechnician ? null : '/services',
           title: 'Services',
-          tabBarIcon: ({ color, focused }) => (
+          tabBarIcon: ({ color, focused }: { color: string; focused: boolean }) => (
             <TabIcon name="list-alt" color={color} focused={focused} />
           ),
         }}
@@ -66,7 +66,7 @@ export default function TabsLayout() {
         name="bookings"
         options={{
           title: isTechnician ? 'Orders' : 'Bookings',
-          tabBarIcon: ({ color, focused }) => (
+          tabBarIcon: ({ color, focused }: { color: string; focused: boolean }) => (
             <TabIcon name="calendar-month" color={color} focused={focused} />
           ),
         }}
@@ -77,7 +77,7 @@ export default function TabsLayout() {
         name="profile"
         options={{
           title: 'Profile',
-          tabBarIcon: ({ color, focused }) => (
+          tabBarIcon: ({ color, focused }: { color: string; focused: boolean }) => (
             <TabIcon name="person" color={color} focused={focused} />
           ),
         }}
