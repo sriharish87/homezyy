@@ -9,6 +9,7 @@ import MapView, { Marker, UrlTile, Region } from 'react-native-maps';
 import { Colors, Typography, Spacing, Radius, Shadow } from '@/constants/Theme';
 import { useSocket } from '@/context/SocketContext';
 import ReviewModal from '@/components/ui/ReviewModal';
+import CancellationModal from '@/components/booking/CancellationModal';
 import api from '@/lib/axiosConfig';
 
 type RNAppStateStatus = 'active' | 'background' | 'inactive' | 'unknown' | 'extension';
@@ -47,6 +48,7 @@ export default function LiveTrackingScreen() {
   const [arrived, setArrived] = useState(false);
   const [loading, setLoading] = useState(true);
   const [reviewModalVisible, setReviewModalVisible] = useState(false);
+  const [cancelModalVisible, setCancelModalVisible] = useState(false);
 
   // 1. Fetch booking details for destination markers and tech info
   const fetchBookingInfo = useCallback(async () => {
@@ -291,6 +293,18 @@ export default function LiveTrackingScreen() {
           </TouchableOpacity>
         )}
 
+        {/* ── Cancel Booking Action ── */}
+        {booking?.status !== 'completed' && booking?.status !== 'cancelled' && (
+          <TouchableOpacity
+            style={styles.cancelTripBtn}
+            onPress={() => setCancelModalVisible(true)}
+            activeOpacity={0.85}
+          >
+            <MaterialIcons name="cancel" size={18} color="#dc2626" />
+            <Text style={styles.cancelTripText}>Cancel Booking</Text>
+          </TouchableOpacity>
+        )}
+
         <View style={styles.actionsRow}>
           <TouchableOpacity style={styles.callBtn} activeOpacity={0.8}>
             <MaterialIcons name="phone" size={18} color="#fff" />
@@ -309,6 +323,17 @@ export default function LiveTrackingScreen() {
         technicianId={booking?.counterparty?.name ? 'tech' : ''}
         technicianName={booking?.counterparty?.name || 'Technician'}
         onReviewSubmitted={fetchBookingInfo}
+      />
+
+      <CancellationModal
+        visible={cancelModalVisible}
+        onClose={() => setCancelModalVisible(false)}
+        booking={{ ...booking, _id: id }}
+        isCustomer={true}
+        onSuccess={() => {
+          fetchBookingInfo();
+          router.back();
+        }}
       />
     </View>
   );
@@ -388,4 +413,10 @@ const styles = StyleSheet.create({
     paddingVertical: 12, borderRadius: Radius.lg, marginBottom: Spacing.base,
   },
   reviewBannerText: { fontSize: Typography.sm, fontFamily: 'Manrope-Bold', color: '#b45309' },
+  cancelTripBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    backgroundColor: '#fee2e2', borderWidth: 1, borderColor: '#fca5a5',
+    paddingVertical: 12, borderRadius: Radius.lg, marginBottom: Spacing.base,
+  },
+  cancelTripText: { fontSize: Typography.sm, fontFamily: 'Manrope-Bold', color: '#dc2626' },
 });

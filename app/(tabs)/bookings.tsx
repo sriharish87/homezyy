@@ -12,12 +12,13 @@ import { useSocket } from '@/context/SocketContext';
 import { usePaymentFlow } from '@/hooks/usePaymentFlow';
 import PaymentResultModal from '@/components/ui/PaymentResultModal';
 import ReviewModal from '@/components/ui/ReviewModal';
+import CancellationModal from '@/components/booking/CancellationModal';
 import api from '@/lib/axiosConfig';
 import { startTechnicianTracking, stopTechnicianTracking } from '@/services/backgroundTracking';
 
 // ── Types ──────────────────────────────────────────────────
 
-type BookingStatus = 'pending' | 'accepted' | 'arrived' | 'in_progress' | 'paid' | 'rejected' | 'completed' | 'expired';
+type BookingStatus = 'pending' | 'accepted' | 'arrived' | 'in_progress' | 'paid' | 'rejected' | 'completed' | 'expired' | 'cancelled';
 
 interface UnifiedBooking {
   id: string;
@@ -74,6 +75,7 @@ const STATUS_META: Record<BookingStatus, { label: string; color: string; bg: str
   completed:   { label: 'Completed',   color: '#059669', bg: '#d1fae5', icon: 'task-alt' },
   rejected:    { label: 'Cancelled',   color: '#dc2626', bg: '#fee2e2', icon: 'cancel' },
   expired:     { label: 'Expired',     color: '#dc2626', bg: '#fee2e2', icon: 'cancel' },
+  cancelled:   { label: 'Cancelled',   color: '#dc2626', bg: '#fee2e2', icon: 'cancel' },
 };
 
 function StatusChip({ status }: { status: BookingStatus }) {
@@ -109,6 +111,7 @@ function BookingCard({
   onTrackLive,
   onVerifyOtp,
   onRateService,
+  onCancelBooking,
 }: {
   booking: UnifiedBooking;
   isCustomer: boolean;
@@ -120,6 +123,7 @@ function BookingCard({
   onTrackLive?: () => void;
   onVerifyOtp?: () => void;
   onRateService?: () => void;
+  onCancelBooking?: () => void;
 }) {
   const formattedTime = formatBookingTime(booking.bookingTime);
   const counterpartyName = booking.counterparty?.name || 'Unknown';
@@ -261,6 +265,17 @@ function BookingCard({
               >
                 <MaterialIcons name="star" size={14} color={Colors.star} />
                 <Text style={bc.rateBtnText}>Rate & Review (+20 Pts ⭐)</Text>
+              </TouchableOpacity>
+            )}
+
+            {(booking.status === 'pending' || booking.status === 'accepted') && (
+              <TouchableOpacity
+                style={bc.cancelJobBtn}
+                onPress={(e: any) => { e.stopPropagation?.(); onCancelBooking?.(); }}
+                activeOpacity={0.8}
+              >
+                <MaterialIcons name="cancel" size={14} color="#dc2626" />
+                <Text style={bc.cancelJobBtnText}>Cancel</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -433,6 +448,14 @@ const bc = StyleSheet.create({
   activeTripText: {
     fontSize: Typography.sm, fontFamily: 'Manrope-Bold', color: '#7c3aed',
   },
+  cancelJobBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: '#fee2e2', paddingHorizontal: 12, paddingVertical: 6,
+    borderRadius: Radius.full, borderWidth: 1, borderColor: '#fca5a5',
+  },
+  cancelJobBtnText: {
+    fontSize: Typography.sm, fontFamily: 'Manrope-Bold', color: '#dc2626',
+  },
   otpBanner: {
     backgroundColor: '#ecfdf5',
     borderWidth: 1,
@@ -500,6 +523,10 @@ export default function BookingsScreen() {
   // Review modal state for customer
   const [reviewModalVisible, setReviewModalVisible] = useState(false);
   const [reviewingBooking, setReviewingBooking] = useState<UnifiedBooking | null>(null);
+
+  // Cancellation modal state for customer/technician
+  const [cancelModalVisible, setCancelModalVisible] = useState(false);
+  const [cancellingBooking, setCancellingBooking] = useState<UnifiedBooking | null>(null);
 
   // ── Payment hook ─────────────────────────────────────────
   const {
@@ -717,6 +744,10 @@ export default function BookingsScreen() {
                 setReviewingBooking(item);
                 setReviewModalVisible(true);
               }}
+              onCancelBooking={() => {
+                setCancellingBooking(item);
+                setCancelModalVisible(true);
+              }}
             />
           )}
         />
@@ -736,6 +767,15 @@ export default function BookingsScreen() {
         technicianId={reviewingBooking?.counterparty?.id || ''}
         technicianName={reviewingBooking?.counterparty?.name || 'Technician'}
         onReviewSubmitted={loadBookings}
+      />
+
+      {/* ── Cancellation Modal with Live DB Policy Breakdown ── */}
+      <CancellationModal
+        visible={cancelModalVisible}
+        onClose={() => setCancelModalVisible(false)}
+        booking={cancellingBooking}
+        isCustomer={isCustomer}
+        onSuccess={loadBookings}
       />
 
       {/* ── OTP Verification Modal for Technicians ──────────── */}
