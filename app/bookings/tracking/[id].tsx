@@ -8,6 +8,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import MapView, { Marker, UrlTile, Region } from 'react-native-maps';
 import { Colors, Typography, Spacing, Radius, Shadow } from '@/constants/Theme';
 import { useSocket } from '@/context/SocketContext';
+import ReviewModal from '@/components/ui/ReviewModal';
 import api from '@/lib/axiosConfig';
 
 type RNAppStateStatus = 'active' | 'background' | 'inactive' | 'unknown' | 'extension';
@@ -45,6 +46,7 @@ export default function LiveTrackingScreen() {
   const [techLocation, setTechLocation] = useState<TechLocation | null>(null);
   const [arrived, setArrived] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [reviewModalVisible, setReviewModalVisible] = useState(false);
 
   // 1. Fetch booking details for destination markers and tech info
   const fetchBookingInfo = useCallback(async () => {
@@ -155,15 +157,24 @@ export default function LiveTrackingScreen() {
       }
     };
 
+    const handleJobCompleted = (payload: { bookingId: string; status?: string }) => {
+      if (payload.bookingId === id) {
+        setBooking((prev) => prev ? { ...prev, status: 'completed' } : prev);
+        setReviewModalVisible(true);
+      }
+    };
+
     socket.on('location_broadcast', handleLocationBroadcast);
     socket.on('technician_arrived', handleArrived);
     socket.on('booking_update', handleBookingUpdate);
+    socket.on('job_completed', handleJobCompleted);
     socket.on('initial_location', handleLocationBroadcast);
 
     return () => {
       socket.off('location_broadcast', handleLocationBroadcast);
       socket.off('technician_arrived', handleArrived);
       socket.off('booking_update', handleBookingUpdate);
+      socket.off('job_completed', handleJobCompleted);
       socket.off('initial_location', handleLocationBroadcast);
     };
   }, [socket, id, fetchBookingInfo]);
@@ -268,6 +279,18 @@ export default function LiveTrackingScreen() {
           </View>
         )}
 
+        {/* ── Rate & Review Experience Banner if Completed ── */}
+        {booking?.status === 'completed' && (
+          <TouchableOpacity
+            style={styles.reviewBannerBtn}
+            onPress={() => setReviewModalVisible(true)}
+            activeOpacity={0.85}
+          >
+            <MaterialIcons name="star" size={20} color={Colors.star} />
+            <Text style={styles.reviewBannerText}>Rate & Review Experience (+20 Pts ⭐)</Text>
+          </TouchableOpacity>
+        )}
+
         <View style={styles.actionsRow}>
           <TouchableOpacity style={styles.callBtn} activeOpacity={0.8}>
             <MaterialIcons name="phone" size={18} color="#fff" />
@@ -278,6 +301,15 @@ export default function LiveTrackingScreen() {
           </TouchableOpacity>
         </View>
       </View>
+
+      <ReviewModal
+        visible={reviewModalVisible}
+        onClose={() => setReviewModalVisible(false)}
+        bookingId={id || ''}
+        technicianId={booking?.counterparty?.name ? 'tech' : ''}
+        technicianName={booking?.counterparty?.name || 'Technician'}
+        onReviewSubmitted={fetchBookingInfo}
+      />
     </View>
   );
 }
@@ -350,4 +382,10 @@ const styles = StyleSheet.create({
     borderRadius: Radius.md, paddingVertical: 6, paddingHorizontal: 16, alignSelf: 'flex-start',
   },
   otpCodeText: { fontSize: Typography.lg, fontFamily: 'Manrope-Black', color: '#059669', letterSpacing: 4 },
+  reviewBannerBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    backgroundColor: '#fffbeb', borderWidth: 1, borderColor: '#fde68a',
+    paddingVertical: 12, borderRadius: Radius.lg, marginBottom: Spacing.base,
+  },
+  reviewBannerText: { fontSize: Typography.sm, fontFamily: 'Manrope-Bold', color: '#b45309' },
 });

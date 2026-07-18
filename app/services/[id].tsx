@@ -46,6 +46,24 @@ export default function ServiceDetailsScreen() {
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
 
+  const [techReviews, setTechReviews] = useState<any[]>([]);
+  const [techAvgRating, setTechAvgRating] = useState<number | null>(null);
+  const [techRatingCount, setTechRatingCount] = useState<number>(0);
+
+  useEffect(() => {
+    if (technician?._id) {
+      import('@/services/reviewService').then(({ fetchTechnicianReviews }) => {
+        fetchTechnicianReviews(technician._id).then((res) => {
+          if (res?.success) {
+            setTechReviews(res.reviews || []);
+            setTechAvgRating(res.rating || null);
+            setTechRatingCount(res.numberOfRatings || 0);
+          }
+        }).catch((err) => console.log('Failed to fetch tech reviews:', err));
+      });
+    }
+  }, [technician?._id]);
+
   if (!service) {
     return (
       <SafeAreaView style={styles.safeArea}>
@@ -275,8 +293,8 @@ export default function ServiceDetailsScreen() {
           <Text style={styles.serviceTitle}>{service.title}</Text>
           <View style={styles.ratingChip}>
             <MaterialIcons name="star" size={16} color={Colors.star} />
-            <Text style={styles.ratingText}>{ratingValue ?? '0'}</Text>
-            <Text style={styles.reviewCount}>({service.reviews})</Text>
+            <Text style={styles.ratingText}>{techAvgRating ?? ratingValue ?? '0'}</Text>
+            <Text style={styles.reviewCount}>({techRatingCount ? `${techRatingCount} reviews` : service.reviews})</Text>
           </View>
         </View>
 
@@ -333,6 +351,58 @@ export default function ServiceDetailsScreen() {
               <Text style={styles.includesText}>{item}</Text>
             </View>
           ))}
+        </View>
+
+        {/* ── Customer Reviews & Ratings Section ────────────── */}
+        <View style={styles.section}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <Text style={styles.sectionTitle}>Customer Reviews</Text>
+            {techAvgRating ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <MaterialIcons name="star" size={18} color={Colors.star} />
+                <Text style={{ fontSize: Typography.base, fontFamily: 'Manrope-Bold', color: Colors.textPrimary }}>
+                  {techAvgRating} <Text style={{ fontSize: Typography.sm, color: Colors.textSecondary }}>({techRatingCount})</Text>
+                </Text>
+              </View>
+            ) : null}
+          </View>
+
+          {techReviews.length === 0 ? (
+            <View style={{ backgroundColor: Colors.surfaceAlt, padding: 16, borderRadius: Radius.lg, alignItems: 'center' }}>
+              <MaterialIcons name="rate-review" size={24} color={Colors.textMuted} />
+              <Text style={{ fontSize: Typography.sm, fontFamily: 'Manrope-Medium', color: Colors.textSecondary, marginTop: 4 }}>
+                No customer reviews yet. Be the first to rate after job completion!
+              </Text>
+            </View>
+          ) : (
+            techReviews.map((rev) => (
+              <View key={rev._id} style={{ backgroundColor: Colors.surface, padding: 14, borderRadius: Radius.lg, marginBottom: 10, borderWidth: 1, borderColor: Colors.borderLight }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <Image
+                      source={{ uri: rev.customerId?.profilePic || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(rev.customerId?.name || 'Customer')}` }}
+                      style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#eee' }}
+                    />
+                    <Text style={{ fontSize: Typography.sm, fontFamily: 'Manrope-Bold', color: Colors.textPrimary }}>
+                      {rev.customerId?.name || 'Verified Customer'}
+                    </Text>
+                  </View>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#fffbeb', paddingHorizontal: 6, paddingVertical: 2, borderRadius: Radius.sm }}>
+                    <MaterialIcons name="star" size={14} color={Colors.star} />
+                    <Text style={{ fontSize: 12, fontFamily: 'Manrope-Bold', color: '#b45309', marginLeft: 2 }}>{rev.rating}.0</Text>
+                  </View>
+                </View>
+                {rev.comment ? (
+                  <Text style={{ fontSize: Typography.sm, fontFamily: 'Manrope-Medium', color: Colors.textSecondary, marginTop: 2 }}>
+                    "{rev.comment}"
+                  </Text>
+                ) : null}
+                <Text style={{ fontSize: 11, color: Colors.textMuted, marginTop: 6 }}>
+                  {new Date(rev.createdAt).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })}
+                </Text>
+              </View>
+            ))
+          )}
         </View>
 
       </ScrollView>

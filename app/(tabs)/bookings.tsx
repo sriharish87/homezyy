@@ -11,6 +11,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useSocket } from '@/context/SocketContext';
 import { usePaymentFlow } from '@/hooks/usePaymentFlow';
 import PaymentResultModal from '@/components/ui/PaymentResultModal';
+import ReviewModal from '@/components/ui/ReviewModal';
 import api from '@/lib/axiosConfig';
 import { startTechnicianTracking, stopTechnicianTracking } from '@/services/backgroundTracking';
 
@@ -107,6 +108,7 @@ function BookingCard({
   onStartTrip,
   onTrackLive,
   onVerifyOtp,
+  onRateService,
 }: {
   booking: UnifiedBooking;
   isCustomer: boolean;
@@ -117,6 +119,7 @@ function BookingCard({
   onStartTrip?: () => void;
   onTrackLive?: () => void;
   onVerifyOtp?: () => void;
+  onRateService?: () => void;
 }) {
   const formattedTime = formatBookingTime(booking.bookingTime);
   const counterpartyName = booking.counterparty?.name || 'Unknown';
@@ -250,10 +253,14 @@ function BookingCard({
               </View>
             )}
 
-            {booking.status === 'completed' && (
-              <TouchableOpacity style={bc.rateBtn}>
+            {booking.status === 'completed' && isCustomer && (
+              <TouchableOpacity
+                style={bc.rateBtn}
+                onPress={(e: any) => { e.stopPropagation?.(); onRateService?.(); }}
+                activeOpacity={0.8}
+              >
                 <MaterialIcons name="star" size={14} color={Colors.star} />
-                <Text style={bc.rateBtnText}>Rate Service</Text>
+                <Text style={bc.rateBtnText}>Rate & Review (+20 Pts ⭐)</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -490,6 +497,10 @@ export default function BookingsScreen() {
   const [otpInput, setOtpInput] = useState('');
   const [otpSubmitting, setOtpSubmitting] = useState(false);
 
+  // Review modal state for customer
+  const [reviewModalVisible, setReviewModalVisible] = useState(false);
+  const [reviewingBooking, setReviewingBooking] = useState<UnifiedBooking | null>(null);
+
   // ── Payment hook ─────────────────────────────────────────
   const {
     initiatePayment,
@@ -702,6 +713,10 @@ export default function BookingsScreen() {
                 setOtpInput('');
                 setVerifyModalVisible(true);
               }}
+              onRateService={() => {
+                setReviewingBooking(item);
+                setReviewModalVisible(true);
+              }}
             />
           )}
         />
@@ -711,6 +726,16 @@ export default function BookingsScreen() {
       <PaymentResultModal
         result={paymentResult ?? (razorpayError ? 'server_error' : null)}
         onDismiss={dismissResult}
+      />
+
+      {/* ── Rate & Review Modal for Customers ──────────────── */}
+      <ReviewModal
+        visible={reviewModalVisible}
+        onClose={() => setReviewModalVisible(false)}
+        bookingId={reviewingBooking?.id || ''}
+        technicianId={reviewingBooking?.counterparty?.id || ''}
+        technicianName={reviewingBooking?.counterparty?.name || 'Technician'}
+        onReviewSubmitted={loadBookings}
       />
 
       {/* ── OTP Verification Modal for Technicians ──────────── */}

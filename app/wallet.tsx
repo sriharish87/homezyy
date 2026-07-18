@@ -19,6 +19,12 @@ import {
   fetchTechnicianProfile,
   withdrawFunds,
 } from '@/services/paymentService';
+import {
+  fetchPointsBalance,
+  redeemTechnicianPoints,
+  redeemCustomerPoints,
+  PointsConfigData,
+} from '@/services/pointsService';
 
 // ── Main screen ────────────────────────────────────────────
 
@@ -32,6 +38,13 @@ export default function WalletScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [walletHelpVisible, setWalletHelpVisible] = useState(false);
 
+  // Fixi Points state
+  const [pointsBalance, setPointsBalance] = useState<number>(0);
+  const [pointsConfig, setPointsConfig] = useState<PointsConfigData | null>(null);
+  const [redeemModalVisible, setRedeemModalVisible] = useState(false);
+  const [redeemPointsAmount, setRedeemPointsAmount] = useState<number>(100);
+  const [redeeming, setRedeeming] = useState(false);
+
   // Guard against double withdraw
   const withdrawGuardRef = useRef(false);
 
@@ -39,11 +52,18 @@ export default function WalletScreen() {
   const loadWallet = useCallback(async () => {
     try {
       setLoadingProfile(true);
-      const profile = await fetchTechnicianProfile();
+      const [profile, pointsData] = await Promise.all([
+        fetchTechnicianProfile().catch(() => ({ walletBalance: 0 })),
+        fetchPointsBalance().catch(() => null),
+      ]);
       setBalance(profile.walletBalance);
+      if (pointsData?.success) {
+        setPointsBalance(pointsData.pointsBalance || 0);
+        if (pointsData.config) setPointsConfig(pointsData.config);
+      }
     } catch (err) {
-      console.error('[WalletScreen] Failed to load profile:', err);
-      Alert.alert('Error', 'Failed to load wallet balance. Pull down to retry.');
+      console.error('[WalletScreen] Failed to load profile/points:', err);
+      Alert.alert('Error', 'Failed to load wallet data. Pull down to retry.');
     } finally {
       setLoadingProfile(false);
     }
@@ -91,6 +111,36 @@ export default function WalletScreen() {
     } finally {
       setWithdrawing(false);
       withdrawGuardRef.current = false;
+    }
+  };
+
+  // ── Redeem Fixi Points ───────────────────────────────────
+  const handleRedeemPoints = async () => {
+    if (redeeming || redeemPointsAmount <= 0 || pointsBalance < redeemPointsAmount) return;
+    const originalPoints = pointsBalance;
+
+    // Optimistic UI update
+    setPointsBalance((prev) => Math.max(0, prev - redeemPointsAmount));
+    setRedeeming(true);
+
+    try {
+      if (user?.role === 'customer') {
+        await redeemCustomerPoints({ pointsRedeemed: redeemPointsAmount });
+      } else {
+        await redeemTechnicianPoints({ pointsRedeemed: redeemPointsAmount });
+      }
+      setRedeemModalVisible(false);
+      Alert.alert(
+        '⭐ Points Redeemed!',
+        `Successfully requested redemption of ${redeemPointsAmount} Fixi Points. Processed within 24 hours.`,
+        [{ text: 'OK', onPress: loadWallet }]
+      );
+    } catch (err: any) {
+      setPointsBalance(originalPoints);
+      const msg = err?.response?.data?.message || 'Points redemption failed. Please try again.';
+      Alert.alert('Redemption Failed', msg);
+    } finally {
+      setRedeeming(false);
     }
   };
 
@@ -192,6 +242,38 @@ export default function WalletScreen() {
           </View>
         </View>
 
+        {/* ── Fixi Points Card (⭐) ───────────────────────── */}
+        <View style={styles.pointsCard}>
+          <View style={styles.pointsHeader}>
+            <View style={styles.pointsIconWrap}>
+              <MaterialIcons name="stars" size={28} color="#d97706" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.pointsTitle}>Fixi Points Balance</Text>
+              <Text style={styles.pointsConversion}>
+                100 Points = ₹1.00 (Current value: ₹{((pointsBalance / (pointsConfig?.techPointsPerRupee || 100))).toFixed(2)})
+              </Text>
+            </View>
+          </View>
+
+          <Text style={styles.pointsAmountText}>{pointsBalance.toLocaleString('en-IN')} <Text style={{ fontSize: Typography.base, color: '#b45309' }}>pts</Text></Text>
+
+          <TouchableOpacity
+            style={[styles.redeemBtn, pointsBalance < (pointsConfig?.minTechRedeemPoints || 100) && styles.redeemBtnDisabled]}
+            onPress={() => {
+              setRedeemPointsAmount(pointsBalance >= 500 ? 500 : pointsBalance >= 100 ? 100 : pointsBalance);
+              setRedeemModalVisible(true);
+            }}
+            disabled={pointsBalance < (pointsConfig?.minTechRedeemPoints || 100)}
+            activeOpacity={0.8}
+          >
+            <MaterialIcons name="military-tech" size={18} color="#fff" />
+            <Text style={styles.redeemBtnText}>
+              {pointsBalance < (pointsConfig?.minTechRedeemPoints || 100) ? `Min ${(pointsConfig?.minTechRedeemPoints || 100)} Pts to Redeem` : 'Redeem Points (Processed within 24 hrs)'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
 
 
         {/* ── Help section ────────────────────────────────── */}
@@ -223,13 +305,75 @@ export default function WalletScreen() {
             <Text style={styles.modalText}>
               All your earnings and payments are processed securely. The amount will be automatically settled to your registered bank account within 48 hours of job completion.
             </Text>
-            <TouchableOpacity style={styles.modalBtn} onPress={() => setWalletHelpVisible(false)}>
-              <Text style={styles.modalBtnText}>Understood</Text>
-            </TouchableOpacity>
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => setWalletHelpVisible(false)}
+              >
+                <Text style={styles.modalCancelText}>Close</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
 
+      {/* ── Redeem Points Modal ───────────────────────────── */}
+      <Modal
+        visible={redeemModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setRedeemModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={[styles.modalIconWrap, { backgroundColor: '#fef3c7' }]}>
+              <MaterialIcons name="military-tech" size={32} color="#d97706" />
+            </View>
+            <Text style={styles.modalTitle}>Redeem Fixi Points</Text>
+            <Text style={styles.modalText}>
+              Select or confirm points to redeem. Redemptions are processed and credited within 24 hours.
+            </Text>
+
+            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
+              {[100, 200, 500].map((amt) => (
+                <TouchableOpacity
+                  key={amt}
+                  onPress={() => setRedeemPointsAmount(amt)}
+                  disabled={pointsBalance < amt}
+                  style={[
+                    styles.quickAmtBtn,
+                    redeemPointsAmount === amt && styles.quickAmtBtnActive,
+                    pointsBalance < amt && { opacity: 0.4 }
+                  ]}
+                >
+                  <Text style={[styles.quickAmtText, redeemPointsAmount === amt && styles.quickAmtTextActive]}>{amt} Pts</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <View style={{ width: '100%', marginBottom: 16 }}>
+              <TouchableOpacity
+                style={styles.modalBtn}
+                onPress={handleRedeemPoints}
+                disabled={redeeming}
+              >
+                {redeeming ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.modalBtnText}>Confirm Redemption ({redeemPointsAmount} Pts)</Text>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalCancelBtn, { marginTop: 10 }]}
+                onPress={() => setRedeemModalVisible(false)}
+                disabled={redeeming}
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -463,4 +607,27 @@ const styles = StyleSheet.create({
     borderRadius: Radius.lg, alignItems: 'center',
   },
   modalBtnText: { fontSize: 15, fontFamily: 'Manrope-Bold', color: '#fff' },
+  modalActions: { width: '100%' },
+  modalCancelBtn: { width: '100%', paddingVertical: 12, alignItems: 'center' },
+  modalCancelText: { fontSize: 14, fontFamily: 'Manrope-Bold', color: Colors.textSecondary },
+  pointsCard: {
+    backgroundColor: '#fffbeb', borderWidth: 1, borderColor: '#fde68a',
+    borderRadius: Radius.xl, padding: Spacing.base, marginHorizontal: Spacing.base,
+    marginTop: Spacing.base, ...Shadow.sm,
+  },
+  pointsHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
+  pointsIconWrap: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#fef3c7', justifyContent: 'center', alignItems: 'center' },
+  pointsTitle: { fontSize: Typography.base, fontFamily: 'Manrope-Bold', color: '#b45309' },
+  pointsConversion: { fontSize: 12, fontFamily: 'Manrope-Medium', color: '#92400e', marginTop: 2 },
+  pointsAmountText: { fontSize: 28, fontFamily: 'Manrope-Black', color: '#92400e', marginBottom: 14 },
+  redeemBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    backgroundColor: '#d97706', paddingVertical: 14, borderRadius: Radius.full, ...Shadow.sm,
+  },
+  redeemBtnDisabled: { opacity: 0.6, backgroundColor: '#9ca3af' },
+  redeemBtnText: { fontSize: Typography.sm, fontFamily: 'Manrope-Bold', color: '#fff' },
+  quickAmtBtn: { flex: 1, paddingVertical: 10, backgroundColor: Colors.surfaceAlt, borderRadius: Radius.md, alignItems: 'center', borderWidth: 1, borderColor: Colors.borderLight },
+  quickAmtBtnActive: { backgroundColor: '#fef3c7', borderColor: '#d97706' },
+  quickAmtText: { fontSize: Typography.sm, fontFamily: 'Manrope-Bold', color: Colors.textSecondary },
+  quickAmtTextActive: { color: '#b45309' },
 });

@@ -9,6 +9,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '@/context/AuthContext';
 import { Colors, Typography, Spacing, Radius, Shadow } from '@/constants/Theme';
 import api from '@/lib/axiosConfig';
+import { fetchPointsBalance, PointsConfigData } from '@/services/pointsService';
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -35,6 +36,8 @@ export default function ProfileScreen() {
   });
 
   const [supportVisible, setSupportVisible] = useState(false);
+  const [pointsBalance, setPointsBalance] = useState(0);
+  const [pointsConfig, setPointsConfig] = useState<PointsConfigData | null>(null);
 
   // Sync state when context changes
   useEffect(() => {
@@ -69,6 +72,15 @@ export default function ProfileScreen() {
           })
           .catch((err) => console.log('Failed to fetch user profile', err));
       }
+
+      fetchPointsBalance()
+        .then((res) => {
+          if (res?.success) {
+            setPointsBalance(res.pointsBalance || 0);
+            if (res.config) setPointsConfig(res.config);
+          }
+        })
+        .catch((err) => console.log('Failed to fetch points balance on profile', err));
     }, [isTech])
   );
 
@@ -176,6 +188,29 @@ export default function ProfileScreen() {
             </View>
           </View>
         )}
+
+        {/* ── Fixi Points Card (⭐) ───────────────────────── */}
+        <TouchableOpacity
+          style={styles.pointsBanner}
+          onPress={() => router.push('/wallet')}
+          activeOpacity={0.88}
+        >
+          <View style={styles.pointsBannerLeft}>
+            <View style={styles.pointsIconBox}>
+              <MaterialIcons name="military-tech" size={26} color="#d97706" />
+            </View>
+            <View>
+              <Text style={styles.pointsBannerTitle}>Fixi Points Balance</Text>
+              <Text style={styles.pointsBannerSub}>
+                100 Pts = ₹1.00 • Value: ₹{((pointsBalance / (pointsConfig?.customerPointsPerRupee || 100))).toFixed(2)}
+              </Text>
+            </View>
+          </View>
+          <View style={{ alignItems: 'flex-end' }}>
+            <Text style={styles.pointsBannerVal}>{pointsBalance} ⭐</Text>
+            <Text style={styles.pointsRedeemLink}>Redeem Now →</Text>
+          </View>
+        </TouchableOpacity>
 
         {/* ── Menu Actions ───────────────────── */}
         <View style={styles.sectionCard}>
@@ -396,4 +431,16 @@ const styles = StyleSheet.create({
     borderRadius: Radius.lg, alignItems: 'center',
   },
   modalBtnText: { fontSize: 15, fontFamily: 'Manrope-Bold', color: '#fff' },
+  pointsBanner: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: '#fffbeb', borderWidth: 1, borderColor: '#fde68a',
+    borderRadius: Radius.xl, padding: Spacing.base, marginHorizontal: Spacing.base,
+    marginBottom: Spacing.base, ...Shadow.sm,
+  },
+  pointsBannerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
+  pointsIconBox: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#fef3c7', justifyContent: 'center', alignItems: 'center' },
+  pointsBannerTitle: { fontSize: Typography.base, fontFamily: 'Manrope-Bold', color: '#b45309' },
+  pointsBannerSub: { fontSize: 11, fontFamily: 'Manrope-Medium', color: '#92400e', marginTop: 2 },
+  pointsBannerVal: { fontSize: 18, fontFamily: 'Manrope-Black', color: '#92400e' },
+  pointsRedeemLink: { fontSize: 11, fontFamily: 'Manrope-Bold', color: '#d97706', marginTop: 2 },
 });
