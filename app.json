@@ -31,7 +31,12 @@
         "ACCESS_BACKGROUND_LOCATION",
         "FOREGROUND_SERVICE",
         "FOREGROUND_SERVICE_LOCATION"
-      ]
+      ],
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyBzGFVmKDVs7tAu8lnVmTVxCNbevtXvK4s"
+        }
+      }
     },
     "web": {
       "bundler": "metro",
@@ -64,6 +69,12 @@
           "locationAlwaysAndWhenInUsePermission": "Allow Homezy to use your location in the background when tracking an active service booking.",
           "isAndroidBackgroundLocationEnabled": true,
           "isAndroidForegroundServiceEnabled": true
+        }
+      ],
+      [
+        "react-native-maps",
+        {
+          "androidGoogleMapsApiKey": "AIzaSyBzGFVmKDVs7tAu8lnVmTVxCNbevtXvK4s"
         }
       ]
     ],

@@ -100,6 +100,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               STORAGE_KEYS.USER,
               JSON.stringify(normalizedUser)
             );
+
+            // Sync lat and lng so screens using it don't break
+            if (normalizedUser?.location?.coordinates) {
+              const [lng, lat] = normalizedUser.location.coordinates;
+              await AsyncStorage.multiSet([
+                ['@homezy_lat', String(lat)],
+                ['@homezy_lng', String(lng)]
+              ]);
+            }
           } catch (validationError) {
             console.warn('Session validation failed:', validationError);
 
@@ -141,6 +150,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         [STORAGE_KEYS.TOKEN, authToken],
         [STORAGE_KEYS.USER, JSON.stringify(normalizedUser)],
       ];
+
+      // Sync lat and lng so screens using it don't break
+      if (normalizedUser?.location?.coordinates) {
+        const [lng, lat] = normalizedUser.location.coordinates;
+        entries.push(['@homezy_lat', String(lat)]);
+        entries.push(['@homezy_lng', String(lng)]);
+      }
 
       if (refreshToken) {
         entries.push([STORAGE_KEYS.REFRESH_TOKEN, refreshToken]);

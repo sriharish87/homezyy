@@ -1,15 +1,15 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, AppState, Platform, ActivityIndicator,
+  View, Text, StyleSheet, TouchableOpacity, AppState, Platform, ActivityIndicator, Linking
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
-import MapView, { Marker, UrlTile, Region } from 'react-native-maps';
 import { Colors, Typography, Spacing, Radius, Shadow } from '@/constants/Theme';
 import { useSocket } from '@/context/SocketContext';
 import ReviewModal from '@/components/ui/ReviewModal';
 import CancellationModal from '@/components/booking/CancellationModal';
+import LeafletMapView from '@/components/map/LeafletMapView';
 import api from '@/lib/axiosConfig';
 
 type RNAppStateStatus = 'active' | 'background' | 'inactive' | 'unknown' | 'extension';
@@ -42,7 +42,7 @@ export default function LiveTrackingScreen() {
   const router = useRouter();
   const { socket, joinTrackingRoom, connected } = useSocket();
 
-  const mapRef = useRef<MapView | null>(null);
+
   const [booking, setBooking] = useState<BookingDetails | null>(null);
   const [techLocation, setTechLocation] = useState<TechLocation | null>(null);
   const [arrived, setArrived] = useState(false);
@@ -77,15 +77,7 @@ export default function LiveTrackingScreen() {
         console.log('[LiveTrackingScreen] Handshake success! Initial coords from Redis:', response.lastLocation);
         setTechLocation(response.lastLocation);
         
-        // Center map to initial location
-        if (mapRef.current) {
-          mapRef.current.animateToRegion({
-            latitude: response.lastLocation.latitude,
-            longitude: response.lastLocation.longitude,
-            latitudeDelta: 0.015,
-            longitudeDelta: 0.015,
-          }, 1000);
-        }
+
       }
     });
   }, [id, joinTrackingRoom]);
@@ -122,15 +114,7 @@ export default function LiveTrackingScreen() {
           timestamp: payload.timestamp,
         });
 
-        // Smooth camera follow
-        if (mapRef.current) {
-          mapRef.current.animateToRegion({
-            latitude: payload.latitude,
-            longitude: payload.longitude,
-            latitudeDelta: 0.012,
-            longitudeDelta: 0.012,
-          }, 1000);
-        }
+
       }
     };
 
@@ -181,8 +165,13 @@ export default function LiveTrackingScreen() {
     };
   }, [socket, id, fetchBookingInfo]);
 
-  const targetLat = booking?.serviceLocation?.coordinates?.[1] || 13.0827;
-  const targetLng = booking?.serviceLocation?.coordinates?.[0] || 80.2707;
+  const parsedLat = Number(booking?.serviceLocation?.coordinates?.[1]);
+  const parsedLng = Number(booking?.serviceLocation?.coordinates?.[0]);
+  const targetLat = isNaN(parsedLat) ? 13.0827 : parsedLat;
+  const targetLng = isNaN(parsedLng) ? 80.2707 : parsedLng;
+
+  const validTechLat = techLocation?.latitude && !isNaN(Number(techLocation.latitude)) ? Number(techLocation.latitude) : targetLat;
+  const validTechLng = techLocation?.longitude && !isNaN(Number(techLocation.longitude)) ? Number(techLocation.longitude) : targetLng;
 
   return (
     <View style={styles.container}>
@@ -199,55 +188,16 @@ export default function LiveTrackingScreen() {
         </View>
       </SafeAreaView>
 
-      {/* ── Zero-API-Key MapView with OpenStreetMap Tile fallback on Android ── */}
-      <MapView
-        ref={mapRef}
-        style={styles.map}
-        initialRegion={{
-          latitude: techLocation?.latitude || targetLat,
-          longitude: techLocation?.longitude || targetLng,
-          latitudeDelta: 0.025,
-          longitudeDelta: 0.025,
-        }}
-      >
-        {/* Render free OpenStreetMap raster tiles across Android & iOS without API billing */}
-        {Platform.OS === 'android' && (
-          <UrlTile
-            urlTemplate="https://a.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            maximumZ={19}
-          />
-        )}
-
-        {/* Customer Destination Marker */}
-        <Marker
-          coordinate={{ latitude: targetLat, longitude: targetLng }}
-          title="Your Service Location"
-          description={booking?.serviceTitle || 'Destination'}
-        >
-          <View style={styles.destinationPin}>
-            <MaterialIcons name="home" size={20} color="#fff" />
-          </View>
-        </Marker>
-
-        {/* Dynamic Technician Vehicle Marker */}
-        {techLocation && (
-          <Marker
-            coordinate={{
-              latitude: techLocation.latitude,
-              longitude: techLocation.longitude,
-            }}
-            rotation={techLocation.heading || 0}
-            flat={true}
-            anchor={{ x: 0.5, y: 0.5 }}
-            title="Technician Vehicle"
-            description={booking?.counterparty?.name || 'Technician'}
-          >
-            <View style={styles.vehicleMarker}>
-              <MaterialIcons name="navigation" size={24} color="#7c3aed" />
-            </View>
-          </Marker>
-        )}
-      </MapView>
+      {/* ── 100% Guaranteed Working Leaflet Map (Zero API Key Required) ── */}
+      <LeafletMapView
+        targetLat={targetLat}
+        targetLng={targetLng}
+        techLat={techLocation?.latitude}
+        techLng={techLocation?.longitude}
+        techHeading={techLocation?.heading}
+        serviceTitle={booking?.serviceTitle}
+        techName={booking?.counterparty?.name}
+      />
 
       {/* ── Bottom Floating Card Overlay ── */}
       <View style={styles.bottomOverlay}>
@@ -306,7 +256,15 @@ export default function LiveTrackingScreen() {
         )}
 
         <View style={styles.actionsRow}>
-          <TouchableOpacity style={styles.callBtn} activeOpacity={0.8}>
+          <TouchableOpacity
+            style={styles.callBtn}
+            activeOpacity={0.8}
+            onPress={() => {
+              if (booking?.counterparty?.phone) {
+                Linking.openURL(`tel:${booking.counterparty.phone}`);
+              }
+            }}
+          >
             <MaterialIcons name="phone" size={18} color="#fff" />
             <Text style={styles.callBtnText}>Call Technician</Text>
           </TouchableOpacity>

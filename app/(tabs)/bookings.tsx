@@ -179,7 +179,7 @@ function BookingCard({
 
           {/* Contextual CTA */}
           <View style={bc.actions}>
-            {isCustomer && (booking.status === 'accepted' || booking.status === 'arrived' || booking.status === 'in_progress') && !booking.isPaid && (
+            {isCustomer && !booking.isPaid && (
                <TouchableOpacity
                  style={[bc.payNowBtn, paymentLoading && bc.payNowBtnDisabled]}
                  onPress={(e: any) => {
@@ -540,7 +540,11 @@ export default function BookingsScreen() {
       setPayingBookingId(null);
       loadBookings(); // Refresh the list
     },
-    onError: () => {},
+    onError: (errMessage) => {
+      if (errMessage && !errMessage.toLowerCase().includes('cancel')) {
+        Alert.alert('Payment Issue', errMessage);
+      }
+    },
     onClose: () => {
       setPayingBookingId(null);
     },
@@ -755,7 +759,7 @@ export default function BookingsScreen() {
 
       {/* ── Payment Modals ────────────────────────────────── */}
       <PaymentResultModal
-        result={paymentResult ?? (razorpayError ? 'server_error' : null)}
+        result={paymentResult}
         onDismiss={dismissResult}
       />
 

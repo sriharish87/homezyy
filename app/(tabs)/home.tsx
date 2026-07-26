@@ -15,7 +15,7 @@ import api from '@/lib/axiosConfig';
 const { width: SCREEN_W } = Dimensions.get('window');
 
 // ── Types ──────────────────────────────────────────────────
-type BookingStatus = 'pending' | 'accepted' | 'rejected' | 'completed' | 'expired';
+type BookingStatus = 'pending' | 'accepted' | 'arrived' | 'in_progress' | 'paid' | 'rejected' | 'completed' | 'expired' | 'cancelled';
 interface UnifiedBooking {
   id: string;
   serviceTitle: string;
@@ -34,6 +34,8 @@ interface UnifiedBooking {
   location?: {
     addressText: string;
   } | null;
+  completionOtp?: string | null;
+  isPaid?: boolean;
 }
 
 // ── Formatting ─────────────────────────────────────────────
@@ -57,11 +59,15 @@ function formatBookingTime(isoDate: string) {
 }
 
 const STATUS_META: Record<BookingStatus, { label: string; color: string; bg: string; icon: string }> = {
-  pending: { label: 'Pending', color: '#d97706', bg: '#fef3c7', icon: 'schedule' },
-  accepted: { label: 'Accepted', color: '#2563eb', bg: '#dbeafe', icon: 'thumb-up' },
-  completed: { label: 'Paid', color: '#059669', bg: '#d1fae5', icon: 'check-circle' },
-  rejected: { label: 'Cancelled', color: '#dc2626', bg: '#fee2e2', icon: 'cancel' },
-  expired: { label: 'Expired', color: '#dc2626', bg: '#fee2e2', icon: 'cancel' },
+  pending:     { label: 'Pending',     color: '#d97706', bg: '#fef3c7', icon: 'schedule' },
+  accepted:    { label: 'Accepted',    color: '#2563eb', bg: '#dbeafe', icon: 'thumb-up' },
+  in_progress: { label: 'In Progress', color: '#7c3aed', bg: '#ede9fe', icon: 'my-location' },
+  arrived:     { label: 'Arrived',     color: '#059669', bg: '#d1fae5', icon: 'location-on' },
+  paid:        { label: 'Paid (Wait OTP)', color: '#059669', bg: '#d1fae5', icon: 'check-circle' },
+  completed:   { label: 'Completed',   color: '#059669', bg: '#d1fae5', icon: 'task-alt' },
+  rejected:    { label: 'Cancelled',   color: '#dc2626', bg: '#fee2e2', icon: 'cancel' },
+  expired:     { label: 'Expired',     color: '#dc2626', bg: '#fee2e2', icon: 'cancel' },
+  cancelled:   { label: 'Cancelled',   color: '#dc2626', bg: '#fee2e2', icon: 'cancel' },
 };
 
 function StatusChip({ status }: { status: BookingStatus }) {
